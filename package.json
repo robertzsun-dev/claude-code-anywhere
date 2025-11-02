@@ -1,0 +1,21 @@
+{
+  "name": "claude-code-remote-access",
+  "version": "1.0.0",
+  "description": "Remote access system for Claude Code sessions",
+  "type": "module",
+  "scripts": {
+    "server": "node server.js",
+    "client": "node client.js",
+    "wrapper": "node wrapper.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0",
+    "node-pty": "^1.0.0",
+    "blessed": "^0.1.81",
+    "commander": "^12.0.0",
+    "chalk": "^5.3.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
