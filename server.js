@@ -39,8 +39,8 @@ function createSession(wrapperWs, metadata) {
     lastActivity: new Date(),
     wrapperWs,
     metadata: metadata || {},
-    history: [], // Keep last 1000 lines for new clients
-    maxHistory: 1000
+    history: [], // Keep last 10000 lines for new clients
+    maxHistory: 10000
   };
 
   sessions.set(id, session);

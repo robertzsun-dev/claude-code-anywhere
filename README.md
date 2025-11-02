@@ -17,12 +17,14 @@ Remote access system for Claude Code sessions. Connect to any running Claude Cod
 
 ## Features
 
+- **Seamless Integration**: Install once, use `claude` normally - automatic remote access!
 - **Remote Session Access**: Connect to Claude Code sessions from any device
-- **Real-time Streaming**: See Claude Code output in real-time
+- **Real-time Streaming**: See Claude Code output in real-time (10,000 line buffer)
 - **Bidirectional Control**: Send input to remote sessions
 - **Multiple Viewers**: Multiple clients can watch the same session
 - **Session Management**: List and attach to active sessions
 - **Terminal UI**: Beautiful blessed-based terminal interface
+- **IDE Compatible**: Works with VSCode, JetBrains, and all IDE integrations
 - **Cross-platform**: Works on Linux, macOS, and Windows
 
 ## Installation
@@ -33,23 +35,49 @@ npm install
 
 ## Quick Start
 
-### 1. Start the Server
+There are two ways to use this system:
 
-On the machine that will host sessions (or a central server):
+### Option A: Seamless Mode (Recommended)
+
+Install once, then use `claude` normally - it automatically connects to the server!
 
 ```bash
+# 1. Install the seamless wrapper
+cd shim
+./install.sh
+
+# 2. Start the server (in another terminal or background)
 npm run server
+
+# 3. Use claude normally!
+claude
+# → Automatically wrapped! Session appears in server.
+
+# 4. Connect remotely
+npm run client
+```
+
+**Benefits:**
+- No workflow changes needed
+- Works with IDE integrations
+- Transparent - only shows Claude Code output
+- Auto-detects if server is running
+
+See [`shim/README.md`](shim/README.md) for full documentation.
+
+### Option B: Manual Mode
+
+Explicitly use the wrapper for each session:
+
+```bash
+# 1. Start the Server
+npm run server
+
+# 2. Start a Claude Code Session
+npm run wrapper
 ```
 
 The server will start on `ws://0.0.0.0:8765` by default.
-
-### 2. Start a Claude Code Session
-
-On the machine where you want to run Claude Code:
-
-```bash
-npm run wrapper
-```
 
 This will:
 - Connect to the server

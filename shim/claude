@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+
+# Claude Code Interceptor Shim
+# This script transparently wraps the real claude command and connects to the session server
+
+# Configuration
+CLAUDE_REMOTE_DIR="${CLAUDE_REMOTE_DIR:-$HOME/claude-code-anywhere}"
+CLAUDE_ORIGINAL="${CLAUDE_ORIGINAL:-/opt/node22/bin/claude-original}"
+SERVER_URL="${CLAUDE_REMOTE_SERVER:-ws://localhost:8765}"
+AUTO_CONNECT="${CLAUDE_AUTO_CONNECT:-true}"
+
+# Check if server is running (only if auto-connect is enabled)
+server_running=false
+if [ "$AUTO_CONNECT" = "true" ]; then
+    # Extract host and port from SERVER_URL
+    # ws://localhost:8765 -> localhost:8765
+    server_addr=$(echo "$SERVER_URL" | sed -E 's|^wss?://||' | sed 's|/.*||')
+
+    # Try to connect to server's health endpoint
+    if timeout 1 bash -c "cat < /dev/null > /dev/tcp/${server_addr/:// } 2>/dev/null"; then
+        server_running=true
+    fi
+fi
+
+# If server is running and we have node wrapper, use it
+if [ "$server_running" = "true" ] && [ -f "$CLAUDE_REMOTE_DIR/wrapper.js" ]; then
+    # Run through the wrapper to enable remote access
+    export CLAUDE_CMD="$CLAUDE_ORIGINAL"
+    export CLAUDE_REMOTE_SERVER="$SERVER_URL"
+    exec node "$CLAUDE_REMOTE_DIR/wrapper.js" "$@"
+else
+    # Server not running or auto-connect disabled, run original claude directly
+    exec "$CLAUDE_ORIGINAL" "$@"
+fi

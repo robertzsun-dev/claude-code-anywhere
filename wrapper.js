@@ -17,6 +17,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const SERVER_URL = process.env.CLAUDE_REMOTE_SERVER || 'ws://localhost:8765';
+const SEAMLESS_MODE = process.env.CLAUDE_SEAMLESS_MODE === 'true';
 
 // Configuration
 const config = {
@@ -28,18 +29,31 @@ const config = {
   rows: process.stdout.rows || 24
 };
 
+// Logging helper - only log if not in seamless mode
+function log(...args) {
+  if (!SEAMLESS_MODE) {
+    console.log(...args);
+  }
+}
+
+function logError(...args) {
+  if (!SEAMLESS_MODE) {
+    console.error(...args);
+  }
+}
+
 let sessionId = null;
 let ws = null;
 let terminal = null;
 
 function connectToServer() {
   return new Promise((resolve, reject) => {
-    console.log(`[Wrapper] Connecting to server: ${SERVER_URL}`);
+    log(`[Wrapper] Connecting to server: ${SERVER_URL}`);
 
     ws = new WebSocket(`${SERVER_URL}?role=wrapper`);
 
     ws.on('open', () => {
-      console.log('[Wrapper] Connected to server');
+      log('[Wrapper] Connected to server');
       resolve();
     });
 
@@ -48,12 +62,12 @@ function connectToServer() {
         const message = JSON.parse(data.toString());
         handleServerMessage(message);
       } catch (err) {
-        console.error('[Wrapper] Error parsing message:', err.message);
+        logError('[Wrapper] Error parsing message:', err.message);
       }
     });
 
     ws.on('close', () => {
-      console.log('[Wrapper] Disconnected from server');
+      log('[Wrapper] Disconnected from server');
       if (terminal) {
         terminal.kill();
       }
@@ -61,7 +75,7 @@ function connectToServer() {
     });
 
     ws.on('error', (err) => {
-      console.error('[Wrapper] WebSocket error:', err.message);
+      logError('[Wrapper] WebSocket error:', err.message);
       reject(err);
     });
   });
@@ -71,10 +85,10 @@ function handleServerMessage(message) {
   switch (message.type) {
     case 'session-created':
       sessionId = message.sessionId;
-      console.log(`[Wrapper] Session created: ${sessionId}`);
-      console.log(`[Wrapper] To connect remotely: node client.js ${sessionId}`);
-      console.log(`[Wrapper] Server URL: ${message.serverUrl}`);
-      console.log('');
+      log(`[Wrapper] Session created: ${sessionId}`);
+      log(`[Wrapper] To connect remotely: node client.js ${sessionId}`);
+      log(`[Wrapper] Server URL: ${message.serverUrl}`);
+      log('');
 
       // Send initial metadata
       sendToServer({
@@ -108,7 +122,7 @@ function handleServerMessage(message) {
       break;
 
     case 'server-shutdown':
-      console.log('[Wrapper] Server is shutting down');
+      log('[Wrapper] Server is shutting down');
       if (terminal) {
         terminal.kill();
       }
@@ -116,7 +130,7 @@ function handleServerMessage(message) {
       break;
 
     default:
-      console.warn(`[Wrapper] Unknown message type: ${message.type}`);
+      logError(`[Wrapper] Unknown message type: ${message.type}`);
   }
 }
 
@@ -127,7 +141,7 @@ function sendToServer(message) {
 }
 
 function startClaudeCode() {
-  console.log(`[Wrapper] Starting Claude Code: ${config.command} ${config.args.join(' ')}`);
+  log(`[Wrapper] Starting Claude Code: ${config.command} ${config.args.join(' ')}`);
 
   // Spawn Claude Code in a PTY
   terminal = pty.spawn(config.command, config.args, {
@@ -140,7 +154,7 @@ function startClaudeCode() {
 
   // Forward output to server
   terminal.onData((data) => {
-    // Also write to local stdout for debugging
+    // Also write to local stdout (always, for user to see)
     process.stdout.write(data);
 
     // Send to server for remote clients
@@ -152,7 +166,7 @@ function startClaudeCode() {
 
   // Handle terminal exit
   terminal.onExit(({ exitCode, signal }) => {
-    console.log(`\n[Wrapper] Claude Code exited with code ${exitCode}${signal ? ` (signal: ${signal})` : ''}`);
+    log(`\n[Wrapper] Claude Code exited with code ${exitCode}${signal ? ` (signal: ${signal})` : ''}`);
 
     sendToServer({
       type: 'exit',
@@ -179,7 +193,7 @@ function startClaudeCode() {
 
 // Handle signals
 process.on('SIGINT', () => {
-  console.log('\n[Wrapper] Interrupted');
+  log('\n[Wrapper] Interrupted');
   if (terminal) {
     terminal.kill('SIGINT');
   }
@@ -187,7 +201,7 @@ process.on('SIGINT', () => {
 });
 
 process.on('SIGTERM', () => {
-  console.log('\n[Wrapper] Terminated');
+  log('\n[Wrapper] Terminated');
   if (terminal) {
     terminal.kill('SIGTERM');
   }
@@ -206,8 +220,8 @@ async function main() {
   try {
     await connectToServer();
   } catch (err) {
-    console.error('[Wrapper] Failed to connect to server:', err.message);
-    console.error('[Wrapper] Make sure the server is running: npm run server');
+    logError('[Wrapper] Failed to connect to server:', err.message);
+    logError('[Wrapper] Make sure the server is running: npm run server');
     process.exit(1);
   }
 }
