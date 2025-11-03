@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Claude Code Remote Access</title>
 
     <!-- PWA Manifest -->
@@ -353,8 +353,9 @@
             backdrop-filter: blur(12px);
             -webkit-backdrop-filter: blur(12px);
             color: #fafafa;
-            padding: 0 1.5rem;
-            height: 40px;
+            padding: 0.75rem 1.5rem;
+            padding-bottom: calc(0.75rem + env(safe-area-inset-bottom));
+            min-height: 48px;
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -554,8 +555,9 @@
             }
 
             #status-bar {
-                height: 32px;
-                padding: 0 0.75rem;
+                min-height: 44px;
+                padding: 0.5rem 0.75rem;
+                padding-bottom: calc(0.5rem + env(safe-area-inset-bottom));
                 font-size: 0.6875rem;
             }
         }
