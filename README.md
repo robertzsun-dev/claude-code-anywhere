@@ -23,7 +23,7 @@ Access and control your Claude Code CLI sessions from anywhere. Perfect for:
 🛠️ **Technical Features**:
 - WebSocket-based real-time communication
 - PTY (pseudo-terminal) for full terminal emulation
-- Blessed TUI for rich terminal client
+- xterm.js-based web terminal with full ANSI support
 - Systemd service support for auto-start
 - Docker deployment ready
 
@@ -534,8 +534,7 @@ MIT
 **Built with**:
 - [ws](https://github.com/websockets/ws) - WebSocket library
 - [node-pty](https://github.com/microsoft/node-pty) - PTY bindings
-- [blessed](https://github.com/chjj/blessed) - Terminal UI
-- [commander](https://github.com/tj/commander.js) - CLI framework
+- [xterm.js](https://xtermjs.org/) - Browser-based terminal emulator
 
 **Version**: 1.0.0  
 **Node.js**: >= 18.0.0
