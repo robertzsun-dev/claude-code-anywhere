@@ -13,31 +13,38 @@
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
-            background: #1e1e1e;
-            color: #d4d4d4;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            background: #0d1117;
+            color: #e6edf3;
             height: 100vh;
             display: flex;
             flex-direction: column;
         }
 
         #header {
-            background: #2d2d30;
-            padding: 1rem;
-            border-bottom: 1px solid #3e3e42;
+            background: linear-gradient(135deg, #161b22 0%, #1c2128 100%);
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid #30363d;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
         }
 
         #header h1 {
-            font-size: 1.2rem;
-            font-weight: 500;
+            font-size: 1.25rem;
+            font-weight: 600;
+            background: linear-gradient(135deg, #58a6ff 0%, #79c0ff 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: -0.02em;
         }
 
         #session-info {
-            font-size: 0.9rem;
-            color: #858585;
+            font-size: 0.875rem;
+            color: #8b949e;
+            font-weight: 500;
         }
 
         #main {
@@ -48,12 +55,12 @@
 
         #sidebar {
             width: 300px;
-            background: #252526;
-            border-right: 1px solid #3e3e42;
+            background: #161b22;
+            border-right: 1px solid #30363d;
             display: flex;
             flex-direction: column;
             overflow-y: auto;
-            transition: margin-left 0.3s ease, width 0.3s ease;
+            transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
         #sidebar.hidden {
@@ -63,37 +70,63 @@
         }
 
         #sidebar h2 {
-            padding: 1rem;
-            font-size: 1rem;
-            font-weight: 500;
-            border-bottom: 1px solid #3e3e42;
+            padding: 1.25rem 1rem;
+            font-size: 0.875rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #8b949e;
+            border-bottom: 1px solid #30363d;
+            background: #0d1117;
         }
 
         .session-item {
             padding: 1rem;
-            border-bottom: 1px solid #3e3e42;
+            border-bottom: 1px solid #21262d;
             cursor: pointer;
-            transition: background 0.2s;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+        }
+
+        .session-item::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 3px;
+            background: #58a6ff;
+            transform: scaleY(0);
+            transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
         .session-item:hover {
-            background: #2a2d2e;
+            background: #1c2128;
+            padding-left: 1.25rem;
         }
 
         .session-item.active {
-            background: #094771;
+            background: linear-gradient(90deg, rgba(88, 166, 255, 0.15) 0%, transparent 100%);
+            border-left: 3px solid #58a6ff;
+            padding-left: calc(1rem - 3px);
+        }
+
+        .session-item.active::before {
+            transform: scaleY(1);
         }
 
         .session-id {
-            font-family: 'Monaco', 'Courier New', monospace;
-            font-size: 0.9rem;
-            color: #4ec9b0;
+            font-family: 'SF Mono', 'Monaco', 'Courier New', monospace;
+            font-size: 0.875rem;
+            color: #79c0ff;
             margin-bottom: 0.5rem;
+            font-weight: 500;
         }
 
         .session-meta {
-            font-size: 0.8rem;
-            color: #858585;
+            font-size: 0.75rem;
+            color: #8b949e;
+            line-height: 1.6;
         }
 
         #content {
@@ -115,30 +148,43 @@
 
         button {
             padding: 0.5rem 1rem;
-            background: #0e639c;
+            background: linear-gradient(135deg, #238636 0%, #2ea043 100%);
             border: none;
             color: white;
             cursor: pointer;
-            font-size: 14px;
-            transition: background 0.2s;
+            font-size: 0.875rem;
+            font-weight: 500;
+            border-radius: 6px;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
         }
 
         button:hover {
-            background: #1177bb;
+            background: linear-gradient(135deg, #2ea043 0%, #3fb950 100%);
+            transform: translateY(-1px);
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+        }
+
+        button:active {
+            transform: translateY(0);
         }
 
         button:disabled {
-            background: #3e3e42;
+            background: #21262d;
             cursor: not-allowed;
+            opacity: 0.5;
+            transform: none;
         }
 
         #status-bar {
-            background: #007acc;
-            color: white;
-            padding: 0.4rem 1rem;
-            font-size: 0.85rem;
+            background: #161b22;
+            color: #e6edf3;
+            padding: 0.5rem 1.5rem;
+            font-size: 0.8rem;
             display: flex;
             justify-content: space-between;
+            border-top: 1px solid #30363d;
+            font-weight: 500;
         }
 
         .status-dot {
@@ -147,14 +193,27 @@
             height: 8px;
             border-radius: 50%;
             margin-right: 0.5rem;
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
         }
 
         .status-dot.connected {
-            background: #4ec9b0;
+            background: #3fb950;
+            box-shadow: 0 0 8px rgba(63, 185, 80, 0.5);
         }
 
         .status-dot.disconnected {
-            background: #f48771;
+            background: #f85149;
+            box-shadow: 0 0 8px rgba(248, 81, 73, 0.5);
+            animation: none;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.6;
+            }
         }
 
         #no-session {
@@ -163,11 +222,19 @@
             justify-content: center;
             flex-direction: column;
             height: 100%;
-            color: #858585;
+            color: #8b949e;
         }
 
         #no-session h2 {
-            margin-bottom: 1rem;
+            margin-bottom: 0.5rem;
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: #e6edf3;
+        }
+
+        #no-session p {
+            color: #8b949e;
+            font-size: 0.875rem;
         }
 
         .hidden {
@@ -177,7 +244,8 @@
         #loading {
             text-align: center;
             padding: 2rem;
-            color: #858585;
+            color: #8b949e;
+            font-size: 0.875rem;
         }
 
         #terminal {
@@ -187,32 +255,64 @@
 
         .keyboard-hints {
             font-size: 0.75rem;
-            color: #858585;
-            padding: 0.5rem;
+            color: #6e7681;
+            padding: 0.5rem 1rem;
             text-align: center;
-            background: #2d2d30;
-            border-top: 1px solid #3e3e42;
+            background: #0d1117;
+            border-top: 1px solid #21262d;
+            font-weight: 500;
         }
 
         #sidebar-toggle {
-            background: transparent;
-            border: 1px solid #3e3e42;
-            color: #d4d4d4;
+            background: rgba(110, 118, 129, 0.1);
+            border: 1px solid #30363d;
+            color: #e6edf3;
             padding: 0.5rem 0.75rem;
             cursor: pointer;
-            font-size: 14px;
-            transition: background 0.2s;
-            border-radius: 3px;
+            font-size: 1.25rem;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            border-radius: 6px;
+            line-height: 1;
+            box-shadow: none;
         }
 
         #sidebar-toggle:hover {
-            background: #3e3e42;
+            background: rgba(110, 118, 129, 0.2);
+            border-color: #58a6ff;
+            transform: none;
+            box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.1);
         }
 
         .header-left {
             display: flex;
             align-items: center;
             gap: 1rem;
+        }
+
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 10px;
+            height: 10px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #0d1117;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #30363d;
+            border-radius: 5px;
+            border: 2px solid #0d1117;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #484f58;
+        }
+
+        /* Smooth transitions */
+        * {
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
         }
     </style>
 </head>
