@@ -149,8 +149,8 @@
         }
 
         #terminal {
-            width: 100%;
             height: 100%;
+            width: 100%;
         }
 
         #terminal-container.active {
@@ -354,12 +354,14 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/xterm-addon-web-links@0.9.0/lib/xterm-addon-web-links.js"></script>
     <script>
         let currentSession = null;
         let ws = null;
         let sessions = [];
         let term = null;
+        let fitAddon = null;
 
         // DOM elements
         const sidebar = document.getElementById('sidebar');
@@ -378,15 +380,8 @@
             sidebar.classList.toggle('hidden');
             // Resize terminal after sidebar animation completes
             setTimeout(() => {
-                const container = document.getElementById('terminal-container');
-                if (term && container) {
-                    const charWidth = 9;
-                    const charHeight = 17;
-                    const availableWidth = container.clientWidth - 32;
-                    const availableHeight = container.clientHeight - 32;
-                    const newCols = Math.max(Math.floor(availableWidth / charWidth), 80);
-                    const newRows = Math.max(Math.floor(availableHeight / charHeight), 24);
-                    term.resize(newCols, newRows);
+                if (fitAddon) {
+                    fitAddon.fit();
                 }
             }, 200);
         }
@@ -407,21 +402,7 @@
                 term.dispose();
             }
 
-            // Calculate terminal dimensions based on available space
-            const container = document.getElementById('terminal-container');
-            const charWidth = 9;  // Approximate width of a monospace character at 14px
-            const charHeight = 17; // Approximate height with line spacing
-
-            // Calculate dimensions to fill the container
-            const availableWidth = container.clientWidth - 32; // Account for padding
-            const availableHeight = container.clientHeight - 32;
-
-            const cols = Math.floor(availableWidth / charWidth);
-            const rows = Math.floor(availableHeight / charHeight);
-
             term = new Terminal({
-                cols: Math.max(cols, 80), // At least 80 columns
-                rows: Math.max(rows, 24), // At least 24 rows
                 cursorBlink: true,
                 fontSize: 14,
                 fontFamily: 'Monaco, Courier New, monospace',
@@ -450,27 +431,26 @@
                 },
                 scrollback: 10000,
                 convertEol: true,
-                lineHeight: 1.2,
                 scrollOnUserInput: true
             });
 
+            fitAddon = new FitAddon.FitAddon();
+            term.loadAddon(fitAddon);
             term.loadAddon(new WebLinksAddon.WebLinksAddon());
 
             term.open(document.getElementById('terminal'));
 
+            // Use requestAnimationFrame to ensure DOM is ready
+            requestAnimationFrame(() => {
+                fitAddon.fit();
+            });
+
             // Resize terminal when window resizes
-            const resizeTerminal = () => {
-                const availableWidth = container.clientWidth - 32;
-                const availableHeight = container.clientHeight - 32;
-                const newCols = Math.max(Math.floor(availableWidth / charWidth), 80);
-                const newRows = Math.max(Math.floor(availableHeight / charHeight), 24);
-
-                if (term && (term.cols !== newCols || term.rows !== newRows)) {
-                    term.resize(newCols, newRows);
+            window.addEventListener('resize', () => {
+                if (fitAddon) {
+                    fitAddon.fit();
                 }
-            };
-
-            window.addEventListener('resize', resizeTerminal);
+            });
 
             // Handle terminal input
             term.onData((data) => {
