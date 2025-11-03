@@ -1,377 +1,530 @@
 # Claude Code Remote Access
 
-Remote access system for Claude Code sessions. Connect to any running Claude Code session from anywhere on your network (or the internet with proper setup).
+> 🚀 **Access your Claude Code sessions from anywhere** - View and control Claude Code sessions remotely through WebSocket
 
-## Architecture
-
-```
-┌─────────────────┐         ┌─────────────────┐         ┌─────────────────┐
-│  Claude Code    │◄───────►│ Session Server  │◄───────►│ Remote Client   │
-│  (via Wrapper)  │  stdio  │   (WebSocket)   │ network │  (View/Control) │
-│                 │         │                 │         │                 │
-│  - Runs claude  │         │ - Manages I/O   │         │ - Terminal UI   │
-│  - Captures I/O │         │ - Multiplexes   │         │ - Send input    │
-│  - Streams data │         │ - Routes msgs   │         │ - Live updates  │
-└─────────────────┘         └─────────────────┘         └─────────────────┘
-```
+Access and control your Claude Code CLI sessions from anywhere. Perfect for:
+- **Remote development**: Access Claude on your workstation from your laptop
+- **Pair programming**: Share your Claude session with teammates in real-time
+- **Multi-device workflows**: Start on desktop, continue on laptop
+- **Web access**: Use Claude through any web browser
 
 ## Features
 
-- **Web-Based Client**: No installation needed - just open your browser!
-- **Seamless Integration**: Install once, use `claude` normally - automatic remote access!
-- **Remote Session Access**: Connect to Claude Code sessions from any device
-- **Real-time Streaming**: See Claude Code output in real-time (10,000 line buffer)
-- **Bidirectional Control**: Send input to remote sessions
-- **Multiple Viewers**: Multiple clients can watch the same session
-- **Session Management**: List and attach to active sessions
-- **Dual Client Options**: Web browser OR terminal client
-- **IDE Compatible**: Works with VSCode, JetBrains, and all IDE integrations
-- **Cross-platform**: Works on Linux, macOS, and Windows
+✨ **Core Features**:
+- 🌐 **Remote Access**: Connect to Claude sessions over network (LAN/VPN/Internet)
+- 👥 **Multi-Viewer**: Multiple users can view and interact with the same session
+- 📜 **Session History**: 10,000-line scrollback buffer for late joiners
+- 🔄 **Auto-Reconnect**: Seamless reconnection if connection drops
+- 🖥️ **Web Client**: Browser-based terminal (no installation needed)
+- 📦 **Seamless Mode**: Zero-config interception of `claude` command
 
-## Installation
-
-```bash
-npm install
-```
+🛠️ **Technical Features**:
+- WebSocket-based real-time communication
+- PTY (pseudo-terminal) for full terminal emulation
+- Blessed TUI for rich terminal client
+- Systemd service support for auto-start
+- Docker deployment ready
 
 ## Quick Start
 
-There are two ways to use this system:
+### Prerequisites
 
-### Option A: Seamless Mode (Recommended)
+- Node.js >= 18.0.0
+- Claude Code installed (`npm install -g @anthropic-ai/claude-code`)
 
-Install once, then use `claude` normally - it automatically connects to the server!
+### Installation
 
 ```bash
-# 1. Install the seamless wrapper
-cd shim
-./install.sh
-
-# 2. Start the server (in another terminal or background)
-npm run server
-
-# 3. Use claude normally!
-claude
-# → Automatically wrapped! Session appears in server.
-
-# 4. Connect remotely
-npm run client
+git clone https://github.com/your-username/claude-code-anywhere.git
+cd claude-code-anywhere
+npm install
 ```
 
-**Benefits:**
-- No workflow changes needed
-- Works with IDE integrations
-- Transparent - only shows Claude Code output
-- Auto-detects if server is running
+### Basic Usage (3 Steps)
 
-See [`shim/README.md`](shim/README.md) for full documentation.
-
-### Option B: Manual Mode
-
-Explicitly use the wrapper for each session:
-
+**1. Start the server:**
 ```bash
-# 1. Start the Server
 npm run server
+```
 
-# 2. Start a Claude Code Session
+The server starts on `http://localhost:8085` by default.
+
+**2. Start a Claude session (wrapper mode):**
+```bash
 npm run wrapper
+# Now use Claude normally - output appears locally AND remotely
 ```
 
-The server will start on `ws://0.0.0.0:8085` by default.
+**3. Connect from another terminal/machine:**
 
-This will:
-- Connect to the server
-- Launch Claude Code in a pseudo-terminal
-- Display a session ID
-- Stream all I/O to the server
-
-Example output:
-```
-[Wrapper] Session created: a1b2c3d4e5f6g7h8
-[Wrapper] To connect remotely: node client.js a1b2c3d4e5f6g7h8
-[Wrapper] Server URL: ws://localhost:8085
+Option A - **Terminal client**:
+```bash
+npm run client              # Lists active sessions
+node src/client.js <session-id>   # Connect to specific session
 ```
 
-### 3. Connect Remotely
-
-**Option A: Web Browser (Easiest - No Installation Required!)**
-
-Just open your browser and visit:
+Option B - **Web browser**:
 ```
 http://localhost:8085
 ```
 
-Or from another machine:
-```
-http://192.168.1.100:8085
-```
+That's it! Your Claude session is now accessible remotely.
 
-The web interface will show all active sessions - just click one to view!
+## Seamless Mode (Automatic Interception)
 
-**Option B: Terminal Client (Advanced)**
+**Seamless mode** makes the wrapper completely transparent - just run `claude` normally and it automatically connects to the remote server when available.
 
-From anywhere on your network:
+### Installation
 
 ```bash
-# List available sessions
-npm run client
-
-# Or connect to a specific session
-node client.js a1b2c3d4e5f6g7h8
+cd shim
+sudo ./install.sh
 ```
 
-From a different machine:
+The installer will:
+1. Create wrapper in `/usr/local/bin/claude`
+2. Dynamically find original `claude` at runtime
+3. Create config file `~/.claude-remote.conf`
+4. Optionally install systemd service
+
+### How It Works
 
 ```bash
-# Set the server URL
-export CLAUDE_REMOTE_SERVER=ws://192.168.1.100:8085
+# Just use claude normally
+claude
 
-# Connect
-node client.js a1b2c3d4e5f6g7h8
+# Behind the scenes:
+# 1. Shim checks if server is running (< 0.5s timeout)
+# 2. If yes: Routes through wrapper → remote access enabled
+# 3. If no: Runs original claude directly → normal operation
 ```
+
+**Benefits**:
+- ✅ No workflow changes
+- ✅ Automatic fallback when server offline
+- ✅ Works with IDE integrations unchanged
+- ✅ Survives npm updates (no hardcoded paths)
+
+### Configuration
+
+Edit `~/.claude-remote.conf`:
+```bash
+# Server URL (change for remote access)
+export CLAUDE_REMOTE_SERVER=ws://localhost:8085
+
+# Auto-connect toggle
+export CLAUDE_AUTO_CONNECT=true  # Set to false to disable
+
+# Claude remote directory
+export CLAUDE_REMOTE_DIR=/path/to/claude-code-anywhere
+```
+
+Then reload: `source ~/.bashrc` (or restart terminal)
+
+### Uninstallation
+
+```bash
+cd shim
+sudo ./uninstall.sh
+```
+
+## Web Client
+
+The built-in web client provides browser-based access with no installation required.
+
+### Features
+
+- 📱 **Responsive UI**: Works on desktop, tablet, and mobile
+- 🎨 **Full Terminal Emulation**: Colors, formatting, ANSI codes
+- ⌨️ **Interactive**: Send input, scroll history
+- 🔄 **Auto-Reconnect**: Handles connection drops gracefully
+- 📊 **Session List**: Browse and connect to active sessions
+
+### Usage
+
+1. Start server: `npm run server`
+2. Open browser: `http://localhost:8085`
+3. Select a session from the list
+4. Interact with Claude through the terminal
+
+**Keyboard Shortcuts**:
+- `Ctrl+I`: Open input dialog
+- `Ctrl+L`: Clear terminal
+- `Scroll/Mouse`: Navigate history
 
 ## Usage
 
 ### Server
 
+Start the session server:
+
 ```bash
-# Start on default port (8085)
 npm run server
 
-# Custom host/port
-HOST=0.0.0.0 PORT=9000 npm run server
+# With custom port
+PORT=9000 npm run server
+
+# With custom host (bind to all interfaces)
+HOST=0.0.0.0 npm run server
 ```
 
-**Environment Variables:**
+**Environment Variables**:
+- `PORT` - Server port (default: `8085`)
 - `HOST` - Bind address (default: `0.0.0.0`)
-- `PORT` - Port number (default: `8085`)
 
-**HTTP Endpoints:**
+**HTTP Endpoints**:
+- `GET /` - Web client
 - `GET /health` - Server health check
 - `GET /sessions` - List active sessions (JSON)
 
-### Wrapper
+### Wrapper (Manual Mode)
+
+Launch Claude through the wrapper:
 
 ```bash
-# Start Claude Code with default settings
 npm run wrapper
 
-# Pass arguments to Claude Code
-node wrapper.js --help
-node wrapper.js chat
-
-# Connect to a different server
+# With custom server
 CLAUDE_REMOTE_SERVER=ws://192.168.1.100:8085 npm run wrapper
 
-# Use a different Claude Code command
-CLAUDE_CMD=/usr/local/bin/claude npm run wrapper
+# Pass arguments to Claude
+npm run wrapper -- chat
+npm run wrapper -- --help
 ```
 
-**Environment Variables:**
-- `CLAUDE_REMOTE_SERVER` - Server WebSocket URL (default: `ws://localhost:8085`)
-- `CLAUDE_CMD` - Claude Code command (default: `claude`)
+**Environment Variables**:
+- `CLAUDE_REMOTE_SERVER` - Server URL (default: `ws://localhost:8085`)
+- `CLAUDE_CMD` - Claude binary path (default: `claude`)
+- `CLAUDE_SEAMLESS_MODE` - Silent mode (default: `false`)
 
-### Client
+### Client (Terminal UI)
+
+Connect to a session:
 
 ```bash
-# List available sessions
+# List sessions
 npm run client
 
-# Connect to a session
-node client.js <session-id>
+# Connect to specific session
+node src/client.js <session-id>
 
-# Connect to a different server
-node client.js <session-id> --server ws://192.168.1.100:8085
+# Custom server
+node src/client.js <session-id> --server ws://192.168.1.100:8085
 ```
 
-**Keyboard Shortcuts (in client UI):**
-- `Ctrl+I` - Send input to the session
-- `Ctrl+L` - Clear terminal output
-- `Ctrl+C` - Disconnect and quit
-- `Mouse Scroll` - Scroll through output
+**Keyboard Controls**:
+- `Ctrl+I`: Send input
+- `Ctrl+L`: Clear screen
+- `Ctrl+C`: Disconnect
+- `Mouse`: Scroll history
 
-## Network Setup
+## Remote Access
 
-### Local Network (VPN)
+### Local Network (LAN)
 
-If you're on a VPN or local network:
+1. **Find your machine's IP:**
+```bash
+# Linux/Mac
+ip addr show | grep "inet " | grep -v 127.0.0.1
 
-1. Start the server on a machine accessible to all clients
-2. Note the server's IP address (e.g., `192.168.1.100`)
-3. Set `CLAUDE_REMOTE_SERVER=ws://192.168.1.100:8085` on wrapper and client machines
-
-### Internet Access (Cloud/Tunnel)
-
-For internet access, you have several options:
-
-#### Option 1: Reverse Proxy with nginx
-
-```nginx
-server {
-    listen 443 ssl;
-    server_name claude-remote.example.com;
-
-    ssl_certificate /path/to/cert.pem;
-    ssl_certificate_key /path/to/key.pem;
-
-    location / {
-        proxy_pass http://localhost:8085;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-    }
-}
+# Or use hostname -I
+hostname -I | awk '{print $1}'
 ```
 
-Then use: `CLAUDE_REMOTE_SERVER=wss://claude-remote.example.com`
+2. **Start server:**
+```bash
+npm run server
+```
 
-#### Option 2: SSH Tunnel
+3. **Connect from another machine:**
+```bash
+# Set server URL on client machine
+export CLAUDE_REMOTE_SERVER=ws://192.168.1.100:8085
 
-On the client machine:
+# Connect
+node src/client.js <session-id>
+
+# Or use web browser
+http://192.168.1.100:8085
+```
+
+### VPN Access
+
+If you're on a VPN (e.g., WireGuard, OpenVPN):
 
 ```bash
-# Forward local port 8085 to remote server
+# Find VPN IP (usually 10.x.x.x)
+ip addr show tun0
+
+# Use VPN IP as server URL
+export CLAUDE_REMOTE_SERVER=ws://10.8.0.1:8085
+```
+
+### Internet Access (Advanced)
+
+**⚠️ Security Warning**: Only use with proper authentication/encryption in production.
+
+**Option 1: SSH Tunnel (Recommended)**
+```bash
+# On local machine: Forward remote port to local
 ssh -L 8085:localhost:8085 user@remote-server
 
-# Then connect normally
-node client.js <session-id>
+# Now access via localhost
+export CLAUDE_REMOTE_SERVER=ws://localhost:8085
 ```
 
-#### Option 3: ngrok/Cloudflare Tunnel
-
+**Option 2: ngrok (Quick testing)**
 ```bash
-# Using ngrok
+# On server machine
 ngrok http 8085
 
-# Then use the provided URL
-CLAUDE_REMOTE_SERVER=wss://abc123.ngrok.io npm run wrapper
+# Use the ngrok URL (changes WebSocket to wss://)
+export CLAUDE_REMOTE_SERVER=wss://abc123.ngrok.io
 ```
 
-## Security Considerations
+**Option 3: Reverse Proxy (Production)**
 
-⚠️ **Important**: This is a basic implementation without authentication. For production use, you should:
+See `examples/nginx.conf` for nginx configuration with TLS and authentication.
 
-1. **Add Authentication**: Implement token-based auth or OAuth
-2. **Use TLS**: Always use `wss://` (WebSocket Secure) over the internet
-3. **Firewall**: Restrict server access to known IPs
-4. **VPN**: Use a VPN for secure network tunneling
-5. **Session Encryption**: Encrypt session data end-to-end
+## Project Structure
 
-## Advanced Usage
-
-### Multiple Sessions
-
-You can run multiple Claude Code sessions simultaneously:
-
-```bash
-# Terminal 1
-npm run wrapper
-
-# Terminal 2
-npm run wrapper
-
-# Terminal 3 - list sessions
-npm run client
+```
+claude-code-anywhere/
+├── src/
+│   ├── server.js           # WebSocket session server
+│   ├── wrapper.js          # PTY wrapper for Claude Code
+│   └── client.js           # Terminal UI client
+│
+├── shim/                   # Seamless mode wrapper
+│   ├── claude              # Shim script template
+│   ├── install.sh          # Installer with systemd support
+│   └── uninstall.sh        # Removal script
+│
+├── public/                 # Web client
+│   └── index.html          # Browser-based terminal
+│
+├── tests/                  # Test suite
+│   ├── server.test.js
+│   ├── wrapper.test.js
+│   └── integration.test.js
+│
+├── examples/               # Deployment examples
+│   ├── docker-compose.yml
+│   ├── Dockerfile
+│   ├── nginx.conf
+│   ├── claude-remote.service
+│   └── config.example.sh
+│
+├── package.json
+├── README.md              # This file
+└── CLAUDE.md              # Technical documentation for AI
 ```
 
-### Session Metadata
+## Configuration
 
-The wrapper sends metadata about each session:
-- Working directory
-- Hostname
-- Username
-- Platform
-- Command and arguments
+### Server Configuration
 
-This helps identify sessions when listing them.
-
-### Background Sessions
-
-Run sessions in the background:
+Set via environment variables:
 
 ```bash
-# Using nohup
-nohup npm run wrapper > /dev/null 2>&1 &
+# Port
+export PORT=8085
 
-# Using screen
-screen -dmS claude-session npm run wrapper
+# Bind address
+export HOST=0.0.0.0
+```
 
-# Using tmux
-tmux new-session -d -s claude-session 'npm run wrapper'
+### Wrapper Configuration
+
+```bash
+# Server URL
+export CLAUDE_REMOTE_SERVER=ws://localhost:8085
+
+# Claude binary path
+export CLAUDE_CMD=/path/to/claude
+
+# Silent mode (for seamless wrapper)
+export CLAUDE_SEAMLESS_MODE=true
+```
+
+### Seamless Mode Configuration
+
+Edit `~/.claude-remote.conf`:
+
+```bash
+# Server URL
+export CLAUDE_REMOTE_SERVER=ws://192.168.1.100:8085
+
+# Auto-connect toggle
+export CLAUDE_AUTO_CONNECT=true
+
+# Project directory
+export CLAUDE_REMOTE_DIR=/path/to/claude-code-anywhere
+
+# PATH priority (ensures wrapper is called first)
+export PATH="/usr/local/bin:$PATH"
 ```
 
 ## Troubleshooting
 
-### "Cannot find module 'ws'"
+### Server won't start
 
-Run `npm install` to install dependencies.
+**Check port availability:**
+```bash
+curl http://localhost:8085/health
+```
 
-### "ECONNREFUSED" when connecting
+If connection refused, server isn't running. If port in use:
+```bash
+lsof -i:8085  # Find process using port
+```
 
-Make sure the server is running and accessible. Check:
-- Server is started (`npm run server`)
-- Firewall allows port 8085
-- Server URL is correct
+**Check firewall:**
+```bash
+# Linux
+sudo ufw status
+sudo ufw allow 8085
 
-### Terminal size issues
+# Check if port is open
+nc -zv localhost 8085
+```
 
-The wrapper automatically handles terminal resizing. If you have issues:
-- The client sends resize events to the wrapper
-- Make sure your terminal emulator supports SIGWINCH
+### Wrapper can't connect
 
-### No output in client
+**Test server connectivity:**
+```bash
+curl http://localhost:8085/health
+```
 
-If you connect to a session and see no output:
-- The client shows history from when it was created
-- Recent output is buffered (last 1000 lines)
-- Try sending input to trigger output
+**Check environment variable:**
+```bash
+echo $CLAUDE_REMOTE_SERVER
+```
+
+**Test network connectivity:**
+```bash
+# For remote servers
+nc -zv <server-ip> 8085
+```
+
+### Client shows no output
+
+**Verify session exists:**
+```bash
+curl http://localhost:8085/sessions
+```
+
+**Check if wrapper is sending output:**
+- Look at the wrapper terminal - you should see output there
+- If wrapper output isn't showing, check `CLAUDE_CMD` points to correct binary
+
+### Seamless mode not working
+
+**Verify shim is active:**
+```bash
+which claude  # Should show /usr/local/bin/claude
+```
+
+**Check server is running:**
+```bash
+curl http://localhost:8085/health
+```
+
+**Test manually:**
+```bash
+# Disable auto-connect and run original
+CLAUDE_AUTO_CONNECT=false claude
+```
+
+**Check configuration:**
+```bash
+cat ~/.claude-remote.conf
+```
+
+### Network issues
+
+**Check server is bound correctly:**
+```bash
+# Should show 0.0.0.0:8085 (all interfaces) or specific IP
+netstat -tlnp | grep 8085
+```
+
+**Firewall:**
+```bash
+# Allow incoming connections
+sudo ufw allow from 192.168.1.0/24 to any port 8085
+```
+
+**Test from client:**
+```bash
+# HTTP endpoint
+curl http://<server-ip>:8085/health
+
+# WebSocket (using websocat if installed)
+websocat ws://<server-ip>:8085/health
+```
 
 ## Development
 
-### Project Structure
+### Running Tests
 
+```bash
+# All tests
+npm test
+
+# Specific test suite
+npm run test:server
+npm run test:wrapper
+npm run test:integration
+
+# Watch mode
+npm run test:watch
 ```
-claude-code-remote-access/
-├── server.js      - WebSocket server for session management
-├── wrapper.js     - PTY wrapper for Claude Code
-├── client.js      - Remote client with terminal UI
-├── package.json   - Dependencies and scripts
-└── README.md      - This file
+
+### Project Scripts
+
+```bash
+npm run server        # Start server
+npm run client        # List sessions
+npm run wrapper       # Start wrapper
+npm test              # Run tests
 ```
 
-### Dependencies
+## Examples
 
-- `ws` - WebSocket server and client
-- `node-pty` - Pseudo-terminal for spawning Claude Code
-- `blessed` - Terminal UI framework
-- `commander` - CLI argument parsing
-- `chalk` - Terminal colors
+See `examples/` directory for:
+
+- **Docker**: `docker-compose.yml` and `Dockerfile`
+- **Systemd**: `claude-remote.service`
+- **nginx**: Reverse proxy with TLS
+- **Shell helpers**: `config.example.sh`
+
+## Contributing
+
+Contributions welcome! Please:
+
+1. Fork the repository
+2. Create a feature branch
+3. Write tests for new features
+4. Submit a pull request
 
 ## License
 
 MIT
 
-## Contributing
+## Support
 
-Contributions welcome! Feel free to:
-- Add authentication
-- Improve the UI
-- Add session recording/playback
-- Implement end-to-end encryption
-- Add mobile client support
+- **Issues**: [GitHub Issues](https://github.com/your-username/claude-code-anywhere/issues)
+- **Documentation**: See `CLAUDE.md` for technical details
+- **Examples**: Check `examples/` directory
 
-## Future Enhancements
+---
 
-- [ ] Authentication (JWT, OAuth)
-- [ ] TLS/SSL support
-- [ ] Session recording and playback
-- [ ] Web-based client (browser UI)
-- [ ] Mobile app support
-- [ ] End-to-end encryption
-- [ ] Session sharing with permissions
-- [ ] Multi-server federation
-- [ ] Session persistence across restarts
-- [ ] Bandwidth optimization
+**Built with**:
+- [ws](https://github.com/websockets/ws) - WebSocket library
+- [node-pty](https://github.com/microsoft/node-pty) - PTY bindings
+- [blessed](https://github.com/chjj/blessed) - Terminal UI
+- [commander](https://github.com/tj/commander.js) - CLI framework
+
+**Version**: 1.0.0  
+**Node.js**: >= 18.0.0

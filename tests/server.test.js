@@ -18,7 +18,7 @@ describe('Server Tests', () => {
 
   before(async () => {
     // Start server for testing
-    serverProcess = spawn('node', ['server.js'], {
+    serverProcess = spawn('node', ['src/server.js'], {
       env: { ...process.env, PORT: TEST_PORT, HOST: 'localhost' }
     });
 

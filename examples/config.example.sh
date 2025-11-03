@@ -60,7 +60,7 @@ claude-connect() {
         echo "Usage: claude-connect <session-id>"
         return 1
     fi
-    cd ~/claude-code-anywhere && node client.js "$1"
+    cd ~/claude-code-anywhere && node src/client.js "$1"
 }
 
 # Quick start everything
@@ -80,7 +80,7 @@ claude-start-all() {
 
 # Stop the server
 claude-stop() {
-    pkill -f "node server.js" || echo "No server running"
+    pkill -f "node src/server.js" || echo "No server running"
 }
 
 # ═══════════════════════════════════════════════════════════

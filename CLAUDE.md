@@ -544,3 +544,315 @@ This project was inspired by the need for seamless remote access to Claude Code 
 **Last Updated**: 2025-11-03
 **Version**: 1.0.0
 **Node.js**: >= 18.0.0
+
+## Detailed Technical Architecture
+
+### Connection Lifecycle
+
+```
+┌─────────────┐
+│  Connection │
+│   Opened    │
+└──────┬──────┘
+       │
+       ▼
+┌─────────────────┐
+│ Parse URL       │
+│ Extract role &  │
+│ session params  │
+└──────┬──────────┘
+       │
+       ├── role=wrapper ──────────┐
+       │                          │
+       │                          ▼
+       │                   ┌──────────────┐
+       │                   │ Create       │
+       │                   │ Session      │
+       │                   └──────┬───────┘
+       │                          │
+       │                          ▼
+       │                   ┌──────────────┐
+       │                   │ Send session-│
+       │                   │ created msg  │
+       │                   └──────┬───────┘
+       │                          │
+       │                          ▼
+       │                   ┌──────────────┐
+       │                   │ Register     │
+       │                   │ client       │
+       │                   └──────────────┘
+       │
+       ├── role=viewer ───────────┐
+       │                          │
+       │                          ▼
+       │                   ┌──────────────┐
+       │                   │ Find session │
+       │                   │ by ID        │
+       │                   └──────┬───────┘
+       │                          │
+       │                   ┌──────┴───────┐
+       │                   │ Exists?      │
+       │                   └──────┬───────┘
+       │                          │
+       │                    Yes───┼───No
+       │                          │    │
+       │                          │    ▼
+       │                          │  Error
+       │                          │  Close
+       │                          │
+       │                          ▼
+       │                   ┌──────────────┐
+       │                   │ Send session-│
+       │                   │ attached +   │
+       │                   │ history      │
+       │                   └──────┬───────┘
+       │                          │
+       │                          ▼
+       │                   ┌──────────────┐
+       │                   │ Register     │
+       │                   │ client       │
+       │                   └──────────────┘
+       │
+       └── invalid role ──────────┐
+                                  │
+                                  ▼
+                           ┌──────────────┐
+                           │ Send error   │
+                           │ Close        │
+                           └──────────────┘
+```
+
+### PTY Architecture
+
+```javascript
+┌──────────────────────────────────────────┐
+│           Wrapper Process                │
+├──────────────────────────────────────────┤
+│                                          │
+│  WebSocket Client                        │
+│  ↓ ↑                                     │
+│  Server Connection                       │
+│                                          │
+│  ┌────────────────────────────────────┐ │
+│  │  PTY (Pseudo-Terminal)             │ │
+│  │  ┌──────────────────────────────┐  │ │
+│  │  │  Claude Code Process         │  │ │
+│  │  │  (spawned with node-pty)     │  │ │
+│  │  │                              │  │ │
+│  │  │  stdin  ◄───┐                │  │ │
+│  │  │  stdout ────┤                │  │ │
+│  │  │  stderr ────┤                │  │ │
+│  │  └──────────────┴───────────────┘  │ │
+│  │                 │                   │ │
+│  │                 │ Terminal data     │ │
+│  │                 ▼                   │ │
+│  │          Forward to:                │ │
+│  │          1. Local stdout            │ │
+│  │          2. Server (WebSocket)      │ │
+│  └────────────────────────────────────┘ │
+│                                          │
+│  Local Terminal (stdin)                 │
+│  ↓                                       │
+│  Forward to PTY                          │
+│                                          │
+└──────────────────────────────────────────┘
+```
+
+### WebSocket Message Protocol
+
+#### Message Format
+
+All messages are JSON-encoded.
+
+**Wrapper → Server:**
+```javascript
+// Terminal output
+{
+  type: "output",
+  data: string  // Raw terminal data with ANSI codes
+}
+
+// Session metadata
+{
+  type: "metadata",
+  data: {
+    cwd: string,
+    command: string,
+    args: string[],
+    hostname: string,
+    platform: string,
+    user: string,
+    cols: number,
+    rows: number
+  }
+}
+
+// Process exit
+{
+  type: "exit",
+  code: number,
+  signal: string?
+}
+```
+
+**Viewer → Server:**
+```javascript
+// User input
+{
+  type: "input",
+  data: string
+}
+
+// Terminal resize
+{
+  type: "resize",
+  cols: number,
+  rows: number
+}
+```
+
+**Server → Wrapper:**
+```javascript
+// Session created
+{
+  type: "session-created",
+  sessionId: string,
+  serverUrl: string
+}
+
+// Input from viewer
+{
+  type: "input",
+  data: string
+}
+
+// Resize from viewer
+{
+  type: "resize",
+  cols: number,
+  rows: number
+}
+
+// Server shutdown
+{
+  type: "server-shutdown"
+}
+```
+
+**Server → Viewer:**
+```javascript
+// Session attached
+{
+  type: "session-attached",
+  sessionId: string,
+  metadata: object,
+  history: array
+}
+
+// Real-time output
+{
+  type: "output",
+  data: string
+}
+
+// Metadata update
+{
+  type: "metadata",
+  data: object
+}
+
+// Session ended
+{
+  type: "exit",
+  code: number,
+  signal: string?
+}
+
+// Input echo (from other viewers)
+{
+  type: "input-echo",
+  data: string
+}
+
+// Wrapper disconnected
+{
+  type: "wrapper-disconnected"
+}
+
+// Error
+{
+  type: "error",
+  error: string
+}
+```
+
+### State Management
+
+**Server State:**
+```javascript
+// In-memory state (does not persist across restarts)
+const sessions = new Map();  // sessionId → Session
+const clients = new Map();   // clientId → Client
+```
+
+**Session Lifecycle:**
+```
+1. CREATE
+   Wrapper connects → Server creates session
+   ↓
+2. ACTIVE
+   Wrapper sends output → Server broadcasts to viewers
+   Viewers send input → Server forwards to wrapper
+   ↓
+3. TERMINATE
+   a. Wrapper sends exit → Server notifies viewers → Delete session
+   b. Wrapper disconnects → Wait 30s → Delete session
+   c. All clients disconnect → Delete session (configurable)
+```
+
+**History Management:**
+```javascript
+// Circular buffer
+addToHistory(session, type, data) {
+  session.history.push({ type, data, timestamp });
+  
+  if (session.history.length > session.maxHistory) {
+    session.history = session.history.slice(-session.maxHistory);
+  }
+}
+```
+
+### Deployment Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                     Production Setup                     │
+├─────────────────────────────────────────────────────────┤
+│                                                          │
+│  ┌─────────────┐                                        │
+│  │   Internet  │                                        │
+│  └──────┬──────┘                                        │
+│         │ HTTPS/WSS                                     │
+│         ▼                                               │
+│  ┌─────────────┐                                        │
+│  │   nginx     │ (Reverse Proxy)                       │
+│  │   - TLS     │                                        │
+│  │   - Auth    │                                        │
+│  └──────┬──────┘                                        │
+│         │ HTTP/WS (localhost)                           │
+│         ▼                                               │
+│  ┌─────────────┐                                        │
+│  │   Server    │ (Port 8085)                           │
+│  │  systemd    │                                        │
+│  └──────┬──────┘                                        │
+│         │                                               │
+│         ├──────────┬──────────┐                        │
+│         │          │          │                        │
+│         ▼          ▼          ▼                        │
+│  ┌─────────┐ ┌─────────┐ ┌─────────┐                 │
+│  │Wrapper 1│ │Wrapper 2│ │Wrapper N│                 │
+│  └─────────┘ └─────────┘ └─────────┘                 │
+│                                                          │
+└─────────────────────────────────────────────────────────┘
+```
+

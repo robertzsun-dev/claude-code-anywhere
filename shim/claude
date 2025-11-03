@@ -23,11 +23,11 @@ if [ "$AUTO_CONNECT" = "true" ]; then
 fi
 
 # If server is running and we have node wrapper, use it
-if [ "$server_running" = "true" ] && [ -f "$CLAUDE_REMOTE_DIR/wrapper.js" ]; then
+if [ "$server_running" = "true" ] && [ -f "$CLAUDE_REMOTE_DIR/src/wrapper.js" ]; then
     # Run through the wrapper to enable remote access
     export CLAUDE_CMD="$CLAUDE_ORIGINAL"
     export CLAUDE_REMOTE_SERVER="$SERVER_URL"
-    exec node "$CLAUDE_REMOTE_DIR/wrapper.js" "$@"
+    exec node "$CLAUDE_REMOTE_DIR/src/wrapper.js" "$@"
 else
     # Server not running or auto-connect disabled, run original claude directly
     exec "$CLAUDE_ORIGINAL" "$@"

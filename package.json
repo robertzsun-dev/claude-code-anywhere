@@ -4,9 +4,9 @@
   "description": "Remote access system for Claude Code sessions",
   "type": "module",
   "scripts": {
-    "server": "node server.js",
-    "client": "node client.js",
-    "wrapper": "node wrapper.js",
+    "server": "node src/server.js",
+    "client": "node src/client.js",
+    "wrapper": "node src/wrapper.js",
     "test": "node --test tests/**/*.test.js",
     "test:watch": "node --test --watch tests/**/*.test.js",
     "test:server": "node --test tests/server.test.js",

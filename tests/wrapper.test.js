@@ -11,7 +11,7 @@ import assert from 'node:assert';
 describe('Wrapper Tests', () => {
   test('Wrapper exports exist', async () => {
     // Test that wrapper.js is valid JavaScript
-    const module = await import('../wrapper.js').catch(() => null);
+    const module = await import('../src/wrapper.js').catch(() => null);
     // Module loads (may fail if dependencies missing, but syntax is valid)
     assert.ok(true, 'Wrapper module syntax is valid');
   });

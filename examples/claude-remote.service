@@ -6,7 +6,7 @@ After=network.target
 Type=simple
 User=%i
 WorkingDirectory=/home/%i/claude-code-anywhere
-ExecStart=/usr/bin/node server.js
+ExecStart=/usr/bin/node src/server.js
 Restart=always
 RestartSec=10
 

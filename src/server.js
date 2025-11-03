@@ -280,7 +280,7 @@ const httpServer = createServer((req, res) => {
         import('url').then(url => {
           const __filename = url.fileURLToPath(import.meta.url);
           const __dirname = path.dirname(__filename);
-          const filePath = path.join(__dirname, 'public', 'index.html');
+          const filePath = path.join(__dirname, '..', 'public', 'index.html');
 
           fs.readFile(filePath, 'utf8', (err, data) => {
             if (err) {
