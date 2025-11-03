@@ -179,14 +179,25 @@ function startClaudeCode() {
     log(`[Wrapper] Starting Claude Code: ${config.command} ${config.args.join(' ')}`);
   }
 
+  log(`[Wrapper] Working directory: ${config.cwd}`);
+  log(`[Wrapper] Terminal size: ${config.cols}x${config.rows}`);
+  log('');
+
   // Spawn Claude Code in a PTY
-  terminal = pty.spawn(config.command, config.args, {
-    name: 'xterm-256color',
-    cols: config.cols,
-    rows: config.rows,
-    cwd: config.cwd,
-    env: config.env
-  });
+  try {
+    terminal = pty.spawn(config.command, config.args, {
+      name: 'xterm-256color',
+      cols: config.cols,
+      rows: config.rows,
+      cwd: config.cwd,
+      env: config.env
+    });
+  } catch (err) {
+    logError('[Wrapper] Failed to spawn process:', err.message);
+    logError('[Wrapper] Command:', config.command);
+    logError('[Wrapper] Args:', config.args);
+    process.exit(1);
+  }
 
   // Forward output to server
   terminal.onData((data) => {
@@ -220,10 +231,26 @@ function startClaudeCode() {
 
   // Forward local stdin to terminal (for local interaction)
   if (process.stdin.isTTY) {
-    process.stdin.setRawMode(true);
-    process.stdin.on('data', (data) => {
-      terminal.write(data);
-    });
+    try {
+      process.stdin.setRawMode(true);
+      process.stdin.on('data', (data) => {
+        terminal.write(data);
+      });
+      log('[Wrapper] Local stdin forwarding enabled (TTY mode)');
+    } catch (err) {
+      logError('[Wrapper] Failed to set raw mode:', err.message);
+    }
+  } else {
+    // Even if not a TTY, try to forward stdin in non-raw mode
+    // This allows some IDEs to still send input
+    try {
+      process.stdin.on('data', (data) => {
+        terminal.write(data);
+      });
+      log('[Wrapper] Local stdin forwarding enabled (non-TTY mode - may have limited functionality)');
+    } catch (err) {
+      log('[Wrapper] Local stdin not available - use web UI for input');
+    }
   }
 
   // Handle local terminal resize
@@ -286,10 +313,20 @@ process.stdout.on('resize', () => {
 // Main
 async function main() {
   try {
+    // Check if stdin is a TTY (important for CLion and other IDEs)
+    if (!process.stdin.isTTY && !SEAMLESS_MODE) {
+      log('[Wrapper] Warning: stdin is not a TTY - local input may not work');
+      log('[Wrapper] This is common in IDE terminals like CLion');
+      log('[Wrapper] You can still view output and control remotely via web UI');
+      log('');
+    }
+
     await connectToServer();
   } catch (err) {
     logError('[Wrapper] Failed to connect to server:', err.message);
+    logError('[Wrapper] Server URL:', SERVER_URL);
     logError('[Wrapper] Make sure the server is running: npm run server');
+    logError('[Wrapper] Or check server status: curl -k https://localhost:8085/health');
     process.exit(1);
   }
 }
