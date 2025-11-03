@@ -849,6 +849,12 @@
 
         // Request notification permission
         async function requestNotificationPermission() {
+            // Check if on iOS but not installed as PWA
+            if (isIOS() && !isStandalone()) {
+                alert('📲 Install First!\n\nOn iOS, notifications only work after installing the app to your home screen.\n\n1. Tap the 📲 Install button\n2. Follow the instructions to add to home screen\n3. Open the app from your home screen\n4. Then enable notifications with the 🔔 button');
+                return false;
+            }
+
             if (!('Notification' in window)) {
                 alert('This browser does not support notifications');
                 return false;
