@@ -1578,8 +1578,12 @@
                         // Check if history ends with a prompt pattern
                         detectWaitingForInput('', true); // Pass empty string but trigger check on existing buffer
 
-                        // Scroll to bottom after loading history
-                        term.scrollToBottom();
+                        // Scroll to bottom after loading history (use setTimeout to ensure terminal is fully rendered)
+                        setTimeout(() => {
+                            if (term) {
+                                term.scrollToBottom();
+                            }
+                        }, 100);
                     }
                     updateSessionInfo(message.metadata);
                     break;
@@ -1881,8 +1885,9 @@
         // Add event listener for Start New Session button
         document.getElementById('start-session-btn').addEventListener('click', openFileBrowser);
 
-        // Auto-refresh session list (safe now - only updates ages/active state, no DOM rebuild)
-        setInterval(loadSessions, 10000);
+        // Disable auto-refresh to prevent focus loss
+        // User can manually refresh if needed
+        // TODO: Find a way to auto-refresh without causing focus loss
 
         // Initial load
         loadSessions();
