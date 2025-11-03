@@ -866,22 +866,29 @@
                 return true;
             }
 
-            if (Notification.permission !== 'denied') {
-                const permission = await Notification.requestPermission();
-                notificationsEnabled = permission === 'granted';
-                if (notificationsEnabled) {
-                    localStorage.setItem('notificationsEnabled', 'true');
-                    updateNotificationButton();
-                    showNotification('Notifications enabled!', 'You will receive alerts when Claude needs your attention.');
+            if (Notification.permission === 'denied') {
+                // Permission was previously denied
+                if (isIOS()) {
+                    alert('🔒 Notifications Blocked\n\nTo enable notifications:\n\n1. Go to iOS Settings\n2. Scroll down and find "Claude Remote"\n3. Tap on it\n4. Enable "Notifications"\n5. Come back and reload this app');
                 } else {
-                    alert('Notifications were denied. You can enable them in your browser settings.');
+                    alert('🔒 Notifications Blocked\n\nTo enable notifications:\n\n1. Click the lock icon (🔒) in your browser\'s address bar\n2. Find "Notifications" in the permissions list\n3. Change it to "Allow"\n4. Reload this page');
                 }
-                return notificationsEnabled;
-            } else {
-                alert('Notifications are blocked. Please enable them in your browser settings.');
+                return false;
             }
 
-            return false;
+            // Permission not yet determined - request it
+            const permission = await Notification.requestPermission();
+            notificationsEnabled = permission === 'granted';
+
+            if (notificationsEnabled) {
+                localStorage.setItem('notificationsEnabled', 'true');
+                updateNotificationButton();
+                showNotification('Notifications enabled!', 'You will receive alerts when Claude needs your attention.');
+            } else {
+                alert('Notifications were denied. Tap the 🔔 button again to see how to enable them.');
+            }
+
+            return notificationsEnabled;
         }
 
         // Update notification button appearance
