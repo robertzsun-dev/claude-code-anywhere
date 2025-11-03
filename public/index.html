@@ -152,6 +152,17 @@
 
         #terminal {
             /* Let xterm.js control dimensions based on cols/rows */
+            display: inline-block;
+            white-space: nowrap;
+        }
+
+        #terminal .xterm-viewport {
+            overflow-y: scroll !important;
+            overflow-x: hidden !important;
+        }
+
+        #terminal .xterm-screen {
+            width: auto !important;
         }
 
         #terminal-container.active {
@@ -490,12 +501,22 @@
                     brightWhite: '#e5e5e5'
                 },
                 scrollback: 10000,
-                convertEol: true,
-                scrollOnUserInput: true
+                convertEol: false,
+                scrollOnUserInput: true,
+                windowsMode: false,
+                allowProposedApi: false
             });
 
             term.loadAddon(new WebLinksAddon.WebLinksAddon());
             term.open(document.getElementById('terminal'));
+
+            // Debug: log terminal dimensions after opening
+            console.log('Terminal initialized:', {
+                cols: term.cols,
+                rows: term.rows,
+                element: term.element,
+                elementWidth: term.element?.offsetWidth
+            });
 
             // Handle terminal input
             term.onData((data) => {
