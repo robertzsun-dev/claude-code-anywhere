@@ -1380,12 +1380,19 @@
             }
 
             // Create a state key for the sessions (excluding active state and age)
-            const sessionStateKey = sessions.map(s =>
-                `${s.id}:${s.metadata.hostname}:${s.metadata.cwd}`
-            ).join('|');
+            // Sort by ID to ensure consistent ordering
+            const sessionStateKey = sessions
+                .slice()
+                .sort((a, b) => a.id.localeCompare(b.id))
+                .map(s => `${s.id}:${s.metadata.hostname || 'unknown'}:${s.metadata.cwd || 'unknown'}`)
+                .join('|');
 
             // Only rebuild DOM if sessions actually changed (add/remove/metadata change)
             if (sessionStateKey !== lastSessionsState) {
+                console.log('[Focus Debug] Session state changed, rebuilding DOM');
+                console.log('[Focus Debug] Old state:', lastSessionsState);
+                console.log('[Focus Debug] New state:', sessionStateKey);
+                console.log('[Focus Debug] Sessions:', sessions);
                 lastSessionsState = sessionStateKey;
 
                 // Generate new HTML (without active class initially)
