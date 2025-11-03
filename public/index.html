@@ -141,12 +141,16 @@
 
         #terminal-container {
             flex: 1;
-            padding: 1rem;
+            padding: 0;
             background: #000000;
             display: none;
             overflow: auto;
-            min-width: 0;
             position: relative;
+        }
+
+        #terminal {
+            padding: 1rem;
+            min-width: max-content;
         }
 
         #terminal-container.active {
@@ -350,14 +354,12 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/xterm-addon-web-links@0.9.0/lib/xterm-addon-web-links.js"></script>
     <script>
         let currentSession = null;
         let ws = null;
         let sessions = [];
         let term = null;
-        let fitAddon = null;
 
         // DOM elements
         const sidebar = document.getElementById('sidebar');
@@ -374,13 +376,7 @@
         // Sidebar toggle
         function toggleSidebar() {
             sidebar.classList.toggle('hidden');
-            // Resize terminal display when sidebar toggles
-            setTimeout(() => {
-                if (term && fitAddon) {
-                    fitAddon.fit();
-                    // Note: Not sending resize to avoid PTY size conflicts
-                }
-            }, 350); // Wait for animation to complete
+            // No terminal resize needed - natural PTY size is maintained
         }
 
         sidebarToggle.addEventListener('click', toggleSidebar);
@@ -428,18 +424,16 @@
                 },
                 scrollback: 10000,
                 convertEol: true,
-                // Handle wrapping when viewer is smaller than PTY
-                windowsMode: false,
-                // Allow horizontal scrolling if PTY is wider than viewport
+                // Don't wrap lines - let horizontal scroll handle overflow
+                lineHeight: 1.2,
                 scrollOnUserInput: true
             });
 
-            fitAddon = new FitAddon.FitAddon();
-            term.loadAddon(fitAddon);
+            // Don't use fitAddon - maintain PTY's natural size to prevent wrapping issues
+            // This allows horizontal scrolling on small screens instead of broken line wrapping
             term.loadAddon(new WebLinksAddon.WebLinksAddon());
 
             term.open(document.getElementById('terminal'));
-            fitAddon.fit();
 
             // Handle terminal input
             term.onData((data) => {
@@ -451,14 +445,8 @@
                 }
             });
 
-            // Handle resize - fit terminal to window but don't send to server
-            // The PTY size is locked to the local terminal to prevent conflicts
-            window.addEventListener('resize', () => {
-                if (fitAddon) {
-                    fitAddon.fit();
-                    // Note: Not sending resize to server to prevent PTY size conflicts
-                }
-            });
+            // No resize handler needed - terminal maintains PTY's natural size
+            // Horizontal scrolling handles overflow on small screens
         }
 
         // Send terminal size to server
