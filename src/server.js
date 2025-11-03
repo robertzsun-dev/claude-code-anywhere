@@ -161,7 +161,14 @@ function handleConnection(ws, req) {
 
   if (role === 'wrapper') {
     // This is a new Claude Code session
-    const session = createSession(ws, {});
+    // Get initial dimensions from query params if provided
+    const initialMetadata = {};
+    const cols = url.searchParams.get('cols');
+    const rows = url.searchParams.get('rows');
+    if (cols) initialMetadata.cols = parseInt(cols);
+    if (rows) initialMetadata.rows = parseInt(rows);
+
+    const session = createSession(ws, initialMetadata);
     clients.set(clientId, {
       ws,
       sessionId: session.id,

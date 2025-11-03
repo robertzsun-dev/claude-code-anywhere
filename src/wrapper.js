@@ -73,9 +73,9 @@ let terminal = null;
 
 function connectToServer() {
   return new Promise((resolve, reject) => {
-    log(`[Wrapper] Connecting to server: ${SERVER_URL}`);
+    log(`[Wrapper] Connecting to server: ${SERVER_URL} (${config.cols}x${config.rows})`);
 
-    ws = new WebSocket(`${SERVER_URL}?role=wrapper`);
+    ws = new WebSocket(`${SERVER_URL}?role=wrapper&cols=${config.cols}&rows=${config.rows}`);
 
     ws.on('open', () => {
       log('[Wrapper] Connected to server');
