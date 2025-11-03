@@ -1025,14 +1025,37 @@
                     const tempContainer = document.createElement('div');
                     tempContainer.style.position = 'absolute';
                     tempContainer.style.visibility = 'hidden';
+                    tempContainer.style.left = '-9999px';
                     document.body.appendChild(tempContainer);
 
                     tempTerm.open(tempContainer);
 
-                    // Get the actual rendered dimensions
-                    const charMeasure = tempTerm._core._renderService.dimensions;
-                    const charWidth = charMeasure.actualCellWidth;
-                    const charHeight = charMeasure.actualCellHeight;
+                    // Write some text to ensure rendering
+                    tempTerm.write('X');
+
+                    // Wait a tick for rendering to complete
+                    await new Promise(resolve => setTimeout(resolve, 0));
+
+                    // Measure from actual DOM elements
+                    const viewport = tempContainer.querySelector('.xterm-screen');
+                    const textLayer = tempContainer.querySelector('.xterm-text-layer');
+
+                    let charWidth, charHeight;
+
+                    if (textLayer && textLayer.children.length > 0) {
+                        // Measure from the actual rendered character
+                        const firstRow = textLayer.children[0];
+                        const rowHeight = firstRow.offsetHeight || 20;
+                        const charElement = firstRow.querySelector('span');
+                        const charElementWidth = charElement ? charElement.offsetWidth : 8.4;
+
+                        charHeight = rowHeight;
+                        charWidth = charElementWidth;
+                    } else {
+                        // Fallback to reasonable defaults for 14px font
+                        charWidth = 8.4;
+                        charHeight = 20;
+                    }
 
                     // Get available space - use full viewport for better mobile support
                     // Account for UI chrome (header, padding, margins)
