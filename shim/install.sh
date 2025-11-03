@@ -55,8 +55,25 @@ cat > /tmp/claude-wrapper << 'EOF'
 
 # Configuration (replaced by install script)
 CLAUDE_REMOTE_DIR="__CLAUDE_REMOTE_DIR__"
-SERVER_URL="${CLAUDE_REMOTE_SERVER:-ws://localhost:8085}"
 AUTO_CONNECT="${CLAUDE_AUTO_CONNECT:-true}"
+
+# Detect if server is running and whether it's using HTTPS
+server_running=false
+detected_protocol="ws"
+if [ "$AUTO_CONNECT" = "true" ]; then
+    # Try HTTPS first (wss://)
+    if timeout 0.5 bash -c 'curl -k -s https://localhost:8085/health > /dev/null 2>&1'; then
+        server_running=true
+        detected_protocol="wss"
+    # Fall back to HTTP (ws://)
+    elif timeout 0.5 bash -c 'curl -s http://localhost:8085/health > /dev/null 2>&1'; then
+        server_running=true
+        detected_protocol="ws"
+    fi
+fi
+
+# Use detected protocol or environment variable
+SERVER_URL="${CLAUDE_REMOTE_SERVER:-${detected_protocol}://localhost:8085}"
 
 # Find the original claude binary by removing /usr/local/bin from PATH
 # and searching for the next 'claude' command
@@ -82,20 +99,6 @@ if [ -z "$CLAUDE_ORIGINAL" ]; then
     echo "Searched PATH (excluding /usr/local/bin): $(echo "$PATH" | tr ':' '\n' | grep -v '^/usr/local/bin$' | tr '\n' ':')" >&2
     echo "Please ensure Claude Code is installed: npm install -g @anthropic-ai/claude-code" >&2
     exit 1
-fi
-
-# Check if server is running (only if auto-connect is enabled)
-server_running=false
-if [ "$AUTO_CONNECT" = "true" ]; then
-    # Extract host and port from SERVER_URL
-    server_addr=$(echo "$SERVER_URL" | sed -E 's|^wss?://||' | sed 's|/.*||')
-    host=$(echo "$server_addr" | cut -d: -f1)
-    port=$(echo "$server_addr" | cut -d: -f2)
-
-    # Try to connect to server (quick timeout)
-    if timeout 0.5 bash -c "cat < /dev/null > /dev/tcp/$host/$port 2>/dev/null"; then
-        server_running=true
-    fi
 fi
 
 # If server is running and we have node wrapper, use it
