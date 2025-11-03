@@ -288,7 +288,8 @@
             padding: 1rem;
             background: #000000;
             display: none;
-            overflow: auto;
+            overflow-y: scroll;
+            overflow-x: hidden;
             position: relative;
             -webkit-overflow-scrolling: touch;
             touch-action: pan-y;
@@ -297,12 +298,12 @@
 
         #terminal {
             /* Let xterm.js control dimensions based on cols/rows */
+            min-height: 100%;
         }
 
         #terminal .xterm-viewport {
-            overflow-y: auto !important;
-            overflow-x: hidden !important;
-            -webkit-overflow-scrolling: touch;
+            /* Disable xterm.js scrolling - let container handle it for iOS momentum */
+            overflow: hidden !important;
         }
 
         #terminal .xterm-screen canvas {
@@ -1537,18 +1538,19 @@
                     }
 
                     // Always scroll to bottom after loading session (multiple times to handle large content)
-                    if (term) {
+                    const terminalContainer = document.getElementById('terminal-container');
+                    if (terminalContainer) {
                         // Immediate scroll
-                        term.scrollToBottom();
+                        terminalContainer.scrollTop = terminalContainer.scrollHeight;
 
                         // Scroll again after DOM updates
                         requestAnimationFrame(() => {
-                            if (term) term.scrollToBottom();
+                            terminalContainer.scrollTop = terminalContainer.scrollHeight;
                         });
 
                         // Final scroll for large content (500ms delay)
                         setTimeout(() => {
-                            if (term) term.scrollToBottom();
+                            terminalContainer.scrollTop = terminalContainer.scrollHeight;
                         }, 500);
                     }
 
