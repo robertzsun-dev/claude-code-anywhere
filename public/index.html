@@ -365,18 +365,52 @@
 
         .status-dot {
             display: inline-block;
-            width: 6px;
-            height: 6px;
+            width: 8px;
+            height: 8px;
             border-radius: 50%;
             margin-right: 0.5rem;
         }
 
         .status-dot.connected {
             background: #22c55e;
+            box-shadow: 0 0 8px rgba(34, 197, 94, 0.5);
         }
 
         .status-dot.disconnected {
-            background: #71717a;
+            background: #ef4444;
+            box-shadow: 0 0 8px rgba(239, 68, 68, 0.5);
+            animation: pulse-red 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse-red {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.5;
+            }
+        }
+
+        #reconnect-btn {
+            display: none;
+            padding: 0.25rem 0.75rem;
+            background: #ef4444;
+            border: 1px solid #dc2626;
+            color: white;
+            cursor: pointer;
+            font-size: 0.75rem;
+            font-weight: 500;
+            border-radius: 4px;
+            margin-left: 1rem;
+            transition: all 0.2s;
+        }
+
+        #reconnect-btn:hover {
+            background: #dc2626;
+        }
+
+        #reconnect-btn:active {
+            transform: scale(0.95);
         }
 
         @keyframes pulse {
@@ -743,6 +777,7 @@
         <div>
             <span class="status-dot disconnected" id="status-dot"></span>
             <span id="status-text">Disconnected</span>
+            <button id="reconnect-btn">Reconnect</button>
         </div>
         <div id="session-stats"></div>
     </div>
@@ -1216,6 +1251,7 @@
         const terminalContainer = document.getElementById('terminal-container');
         const statusDot = document.getElementById('status-dot');
         const statusText = document.getElementById('status-text');
+        const reconnectBtn = document.getElementById('reconnect-btn');
         const sessionInfo = document.getElementById('session-info');
         const sessionStats = document.getElementById('session-stats');
 
@@ -1231,6 +1267,14 @@
         }
 
         sidebarToggle.addEventListener('click', toggleSidebar);
+
+        // Reconnect button handler
+        reconnectBtn.addEventListener('click', () => {
+            if (currentSession) {
+                console.log('[Reconnect] Reconnecting to session:', currentSession);
+                connectToSession(currentSession);
+            }
+        });
 
         // Keyboard shortcut for sidebar toggle (Ctrl+B)
         document.addEventListener('keydown', (e) => {
@@ -1476,6 +1520,7 @@
                 console.log('[WebSocket] Connected to session:', sessionId);
                 statusDot.className = 'status-dot connected';
                 statusText.textContent = 'Connected';
+                reconnectBtn.style.display = 'none';
                 updateSessionInfo();
             };
 
@@ -1492,8 +1537,9 @@
             ws.onclose = (event) => {
                 console.log('[WebSocket] Closed:', event.code, event.reason);
                 statusDot.className = 'status-dot disconnected';
-                statusText.textContent = 'Disconnected - click session to reconnect';
-                // No auto-reconnect - user must click session
+                statusText.textContent = 'Disconnected';
+                reconnectBtn.style.display = 'inline-block';
+                // No auto-reconnect - user must click session or reconnect button
             };
 
             ws.onerror = (error) => {
@@ -1618,6 +1664,7 @@
                     }
                     statusDot.className = 'status-dot disconnected';
                     statusText.textContent = 'Session ended';
+                    reconnectBtn.style.display = 'inline-block';
                     break;
 
                 case 'wrapper-disconnected':
