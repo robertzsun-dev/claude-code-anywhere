@@ -4,6 +4,19 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Claude Code Remote Access</title>
+
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="/manifest.json">
+
+    <!-- iOS PWA Meta Tags -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Claude Remote">
+    <link rel="apple-touch-icon" href="/icon-192.png">
+
+    <!-- Theme Color -->
+    <meta name="theme-color" content="#f97316">
+
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
     <style>
         * {
@@ -45,11 +58,49 @@
             letter-spacing: -0.01em;
         }
 
+        .header-left,
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
         #session-info {
             font-size: 0.8125rem;
             color: #a1a1aa;
             font-weight: 400;
             font-variant-numeric: tabular-nums;
+        }
+
+        #notification-toggle {
+            background: transparent;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: #fafafa;
+            font-size: 1.25rem;
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        #notification-toggle:hover {
+            background: rgba(255, 255, 255, 0.05);
+            border-color: rgba(255, 255, 255, 0.2);
+            transform: scale(1.05);
+        }
+
+        #notification-toggle:active {
+            transform: scale(0.95);
+        }
+
+        #notification-toggle.enabled {
+            background: rgba(249, 115, 22, 0.15);
+            border-color: rgba(249, 115, 22, 0.3);
+            color: #fb923c;
         }
 
         #main {
@@ -560,7 +611,12 @@
             <button id="sidebar-toggle" title="Toggle Sidebar (Ctrl+B)">☰</button>
             <h1>Claude Code Remote Access</h1>
         </div>
-        <div id="session-info"></div>
+        <div class="header-right">
+            <button id="notification-toggle" title="Enable notifications" onclick="requestNotificationPermission()">
+                🔔
+            </button>
+            <div id="session-info"></div>
+        </div>
     </div>
 
     <div id="main">
@@ -602,6 +658,149 @@
         let ws = null;
         let sessions = [];
         let term = null;
+        let notificationsEnabled = false;
+        let lastOutputTime = Date.now();
+        let waitingForInput = false;
+
+        // Register service worker for PWA
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/service-worker.js')
+                .then(registration => {
+                    console.log('Service Worker registered:', registration);
+                })
+                .catch(error => {
+                    console.log('Service Worker registration failed:', error);
+                });
+        }
+
+        // Request notification permission
+        async function requestNotificationPermission() {
+            if (!('Notification' in window)) {
+                alert('This browser does not support notifications');
+                return false;
+            }
+
+            if (Notification.permission === 'granted') {
+                notificationsEnabled = true;
+                updateNotificationButton();
+                return true;
+            }
+
+            if (Notification.permission !== 'denied') {
+                const permission = await Notification.requestPermission();
+                notificationsEnabled = permission === 'granted';
+                if (notificationsEnabled) {
+                    localStorage.setItem('notificationsEnabled', 'true');
+                    updateNotificationButton();
+                    showNotification('Notifications enabled!', 'You will receive alerts when Claude needs your attention.');
+                } else {
+                    alert('Notifications were denied. You can enable them in your browser settings.');
+                }
+                return notificationsEnabled;
+            } else {
+                alert('Notifications are blocked. Please enable them in your browser settings.');
+            }
+
+            return false;
+        }
+
+        // Update notification button appearance
+        function updateNotificationButton() {
+            const btn = document.getElementById('notification-toggle');
+            if (btn) {
+                if (notificationsEnabled) {
+                    btn.classList.add('enabled');
+                    btn.title = 'Notifications enabled';
+                } else {
+                    btn.classList.remove('enabled');
+                    btn.title = 'Enable notifications';
+                }
+            }
+        }
+
+        // Show a notification
+        function showNotification(title, body) {
+            if (!notificationsEnabled || Notification.permission !== 'granted') {
+                return;
+            }
+
+            // Don't show if page is focused
+            if (document.hasFocus()) {
+                return;
+            }
+
+            const notification = new Notification(title, {
+                body: body,
+                icon: '/icon-192.png',
+                badge: '/icon-192.png',
+                vibrate: [200, 100, 200],
+                tag: 'claude-waiting',
+                requireInteraction: true
+            });
+
+            notification.onclick = () => {
+                window.focus();
+                notification.close();
+            };
+        }
+
+        // Detect if Claude is waiting for input by analyzing terminal output
+        function detectWaitingForInput(data) {
+            const text = data.toLowerCase();
+
+            // Common patterns that indicate Claude is waiting for user input
+            const waitingPatterns = [
+                'press enter',
+                'continue?',
+                'proceed?',
+                'yes/no',
+                'y/n',
+                'choose an option',
+                'select:',
+                'your choice:',
+                '? ',  // Question mark prompts
+                'waiting for',
+                'enter to continue',
+                'press any key',
+                'would you like to',
+                'do you want to',
+                'should i',
+                'may i',
+                'okay to',
+                'confirm:',
+                'approve:',
+                '[y/n]',
+                '(y/n)',
+                'type your',
+                'please enter',
+                'input:'
+            ];
+
+            const hasWaitingPattern = waitingPatterns.some(pattern => text.includes(pattern));
+
+            // Also detect if output has stopped for a while (potential prompt)
+            const timeSinceLastOutput = Date.now() - lastOutputTime;
+            const outputStalled = timeSinceLastOutput > 2000; // 2 seconds of no output
+
+            if (hasWaitingPattern || (outputStalled && text.trim().length > 0)) {
+                if (!waitingForInput) {
+                    waitingForInput = true;
+                    showNotification(
+                        'Claude needs your attention',
+                        'Claude Code is waiting for your input or response'
+                    );
+                }
+            }
+        }
+
+        // Check notification permission on load
+        if (localStorage.getItem('notificationsEnabled') === 'true') {
+            if (Notification.permission === 'granted') {
+                notificationsEnabled = true;
+            }
+        }
+        // Update button state after DOM is loaded
+        window.addEventListener('DOMContentLoaded', updateNotificationButton);
 
         // DOM elements
         const sidebar = document.getElementById('sidebar');
@@ -728,6 +927,8 @@
                         type: 'input',
                         data: data
                     }));
+                    // Reset waiting flag when user provides input
+                    waitingForInput = false;
                 }
             });
         }
@@ -865,6 +1066,9 @@
                 case 'output':
                     if (term) {
                         term.write(message.data);
+                        // Track output timing and detect if Claude is waiting for input
+                        lastOutputTime = Date.now();
+                        detectWaitingForInput(message.data);
                     }
                     break;
 
