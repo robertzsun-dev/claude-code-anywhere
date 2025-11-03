@@ -181,12 +181,10 @@ async function connectToSession(sessionId, serverUrl) {
     if (!terminal) return;
 
     // Strip ANSI escape codes for blessed compatibility
-    const stripped = data.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
+    const stripped = data.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '');
 
-    // Write directly without duplication
-    terminal.insertBottom(stripped.split('\n'));
-    terminal.setScrollPerc(100); // Auto-scroll to bottom
-    screen.render();
+    // Use log method which handles output properly
+    terminal.log(stripped);
   }
 
   function initializeUI(sessionData) {
