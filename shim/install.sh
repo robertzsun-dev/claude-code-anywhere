@@ -149,10 +149,12 @@ echo ""
 echo -e "${CYAN}4. Creating configuration...${NC}"
 
 CONFIG_FILE="$HOME/.claude-remote.conf"
+CONFIG_CREATED=false
+
 if [ ! -f "$CONFIG_FILE" ]; then
     cat > "$CONFIG_FILE" << EOF
 # Claude Code Remote Access Configuration
-# Source this file in your ~/.bashrc or ~/.zshrc
+# Auto-sourced by shell rc file
 
 # Ensure /usr/local/bin is first in PATH (for wrapper priority)
 export PATH="/usr/local/bin:\$PATH"
@@ -167,15 +169,61 @@ export CLAUDE_AUTO_CONNECT=true
 export CLAUDE_REMOTE_DIR=$CLAUDE_REMOTE_DIR
 EOF
     echo -e "${GREEN}✓ Created config at: $CONFIG_FILE${NC}"
-    echo -e "${YELLOW}  Add this to your ~/.bashrc or ~/.zshrc:${NC}"
-    echo -e "${YELLOW}  source $CONFIG_FILE${NC}"
+    CONFIG_CREATED=true
 else
     echo -e "${YELLOW}! Config already exists at: $CONFIG_FILE${NC}"
 fi
 
+# Auto-add to shell rc file
+echo ""
+echo -e "${CYAN}5. Configuring shell integration...${NC}"
+
+# Detect shell rc file
+SHELL_RC=""
+if [ -n "$ZSH_VERSION" ]; then
+    SHELL_RC="$HOME/.zshrc"
+elif [ -n "$BASH_VERSION" ]; then
+    SHELL_RC="$HOME/.bashrc"
+else
+    # Try to detect from $SHELL
+    case "$SHELL" in
+        */zsh)
+            SHELL_RC="$HOME/.zshrc"
+            ;;
+        */bash)
+            SHELL_RC="$HOME/.bashrc"
+            ;;
+    esac
+fi
+
+if [ -n "$SHELL_RC" ]; then
+    # Check if already sourced
+    if grep -q "source.*\.claude-remote\.conf" "$SHELL_RC" 2>/dev/null || grep -q "\..*\.claude-remote\.conf" "$SHELL_RC" 2>/dev/null; then
+        echo -e "${YELLOW}! Shell rc already sources config${NC}"
+    else
+        echo ""
+        read -p "Add config to $SHELL_RC automatically? [Y/n] " -n 1 -r
+        echo ""
+        if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+            echo "" >> "$SHELL_RC"
+            echo "# Claude Code Remote Access" >> "$SHELL_RC"
+            echo "[ -f \"$CONFIG_FILE\" ] && source \"$CONFIG_FILE\"" >> "$SHELL_RC"
+            echo -e "${GREEN}✓ Added to $SHELL_RC${NC}"
+            echo -e "${YELLOW}  Run: source $SHELL_RC (or restart shell)${NC}"
+        else
+            echo -e "${YELLOW}Skipped. Manually add to $SHELL_RC:${NC}"
+            echo -e "${YELLOW}  source $CONFIG_FILE${NC}"
+        fi
+    fi
+else
+    echo -e "${YELLOW}! Could not detect shell rc file${NC}"
+    echo -e "${YELLOW}  Manually add to your shell rc file:${NC}"
+    echo -e "${YELLOW}  source $CONFIG_FILE${NC}"
+fi
+
 # Install systemd service (optional)
 echo ""
-echo -e "${CYAN}5. Install systemd service (optional)...${NC}"
+echo -e "${CYAN}6. Install systemd service (optional)...${NC}"
 echo -e "${YELLOW}Would you like to install the server as a systemd service?${NC}"
 echo -e "${YELLOW}This will auto-start the server on boot.${NC}"
 echo ""
@@ -294,14 +342,24 @@ echo ""
 echo -e "${CYAN}Next steps:${NC}"
 if [ "$SYSTEMD_INSTALLED" = true ]; then
     echo -e "  1. Server is running as systemd service!"
-    echo -e "  2. Reload your shell or run: ${YELLOW}source $CONFIG_FILE${NC}"
-    echo -e "  3. Use claude normally: ${YELLOW}claude${NC}"
-    echo -e "  4. View remotely in browser: ${YELLOW}http://localhost:8765${NC}"
+    if [ -n "$SHELL_RC" ] && grep -q "source.*\.claude-remote\.conf" "$SHELL_RC" 2>/dev/null; then
+        echo -e "  2. Restart your shell or run: ${YELLOW}source $SHELL_RC${NC}"
+        echo -e "  3. Run ${YELLOW}which claude${NC} to verify it shows ${YELLOW}/usr/local/bin/claude${NC}"
+    else
+        echo -e "  2. Reload shell: ${YELLOW}source $CONFIG_FILE${NC}"
+    fi
+    echo -e "  4. Use claude normally: ${YELLOW}claude${NC}"
+    echo -e "  5. View remotely in browser: ${YELLOW}http://localhost:8765${NC}"
 else
     echo -e "  1. Start the server: ${YELLOW}cd $CLAUDE_REMOTE_DIR && npm run server${NC}"
-    echo -e "  2. Reload your shell or run: ${YELLOW}source $CONFIG_FILE${NC}"
-    echo -e "  3. Use claude normally: ${YELLOW}claude${NC}"
-    echo -e "  4. View remotely in browser: ${YELLOW}http://localhost:8765${NC}"
+    if [ -n "$SHELL_RC" ] && grep -q "source.*\.claude-remote\.conf" "$SHELL_RC" 2>/dev/null; then
+        echo -e "  2. Restart your shell or run: ${YELLOW}source $SHELL_RC${NC}"
+        echo -e "  3. Run ${YELLOW}which claude${NC} to verify it shows ${YELLOW}/usr/local/bin/claude${NC}"
+    else
+        echo -e "  2. Reload shell: ${YELLOW}source $CONFIG_FILE${NC}"
+    fi
+    echo -e "  4. Use claude normally: ${YELLOW}claude${NC}"
+    echo -e "  5. View remotely in browser: ${YELLOW}http://localhost:8765${NC}"
 fi
 echo ""
 echo -e "${CYAN}Configuration:${NC}"
