@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Claude Code Remote Access</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
     <style>
         * {
             margin: 0;
@@ -52,6 +53,13 @@
             display: flex;
             flex-direction: column;
             overflow-y: auto;
+            transition: margin-left 0.3s ease, width 0.3s ease;
+        }
+
+        #sidebar.hidden {
+            margin-left: -300px;
+            width: 0;
+            border-right: none;
         }
 
         #sidebar h2 {
@@ -97,24 +105,24 @@
         #terminal-container {
             flex: 1;
             padding: 1rem;
-            overflow-y: auto;
-            font-family: 'Monaco', 'Courier New', monospace;
-            font-size: 14px;
-            line-height: 1.5;
-            background: #1e1e1e;
+            background: #000;
+            display: none;
         }
 
-        #terminal-output {
-            white-space: pre-wrap;
-            word-wrap: break-word;
+        #terminal-container.active {
+            display: block;
         }
 
         #input-area {
             padding: 1rem;
             background: #2d2d30;
             border-top: 1px solid #3e3e42;
-            display: flex;
+            display: none;
             gap: 0.5rem;
+        }
+
+        #input-area.active {
+            display: flex;
         }
 
         #input-box {
@@ -198,11 +206,49 @@
             padding: 2rem;
             color: #858585;
         }
+
+        #terminal {
+            height: 100%;
+            width: 100%;
+        }
+
+        .keyboard-hints {
+            font-size: 0.75rem;
+            color: #858585;
+            padding: 0.5rem;
+            text-align: center;
+            background: #2d2d30;
+            border-top: 1px solid #3e3e42;
+        }
+
+        #sidebar-toggle {
+            background: transparent;
+            border: 1px solid #3e3e42;
+            color: #d4d4d4;
+            padding: 0.5rem 0.75rem;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s;
+            border-radius: 3px;
+        }
+
+        #sidebar-toggle:hover {
+            background: #3e3e42;
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
     </style>
 </head>
 <body>
     <div id="header">
-        <h1>Claude Code Remote Access</h1>
+        <div class="header-left">
+            <button id="sidebar-toggle" title="Toggle Sidebar (Ctrl+B)">☰</button>
+            <h1>Claude Code Remote Access</h1>
+        </div>
         <div id="session-info"></div>
     </div>
 
@@ -219,13 +265,17 @@
                 <p>Select a session from the sidebar to view</p>
             </div>
 
-            <div id="terminal-container" class="hidden">
-                <div id="terminal-output"></div>
+            <div id="terminal-container">
+                <div id="terminal"></div>
             </div>
 
-            <div id="input-area" class="hidden">
-                <input type="text" id="input-box" placeholder="Type command and press Enter...">
-                <button id="send-btn">Send</button>
+            <div class="keyboard-hints">
+                Press Ctrl+Shift+V to paste | Ctrl+B to toggle sidebar | Terminal captures input automatically
+            </div>
+
+            <div id="input-area">
+                <input type="text" id="input-box" placeholder="Type input and press Enter to send...">
+                <button id="send-btn">Send (Enter)</button>
                 <button id="clear-btn">Clear</button>
             </div>
         </div>
@@ -239,17 +289,23 @@
         <div id="session-stats"></div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-web-links@0.9.0/lib/xterm-addon-web-links.js"></script>
     <script>
         let currentSession = null;
         let ws = null;
         let sessions = [];
+        let term = null;
+        let fitAddon = null;
 
         // DOM elements
+        const sidebar = document.getElementById('sidebar');
+        const sidebarToggle = document.getElementById('sidebar-toggle');
         const sessionList = document.getElementById('session-list');
         const loading = document.getElementById('loading');
         const noSession = document.getElementById('no-session');
         const terminalContainer = document.getElementById('terminal-container');
-        const terminalOutput = document.getElementById('terminal-output');
         const inputArea = document.getElementById('input-area');
         const inputBox = document.getElementById('input-box');
         const sendBtn = document.getElementById('send-btn');
@@ -258,6 +314,102 @@
         const statusText = document.getElementById('status-text');
         const sessionInfo = document.getElementById('session-info');
         const sessionStats = document.getElementById('session-stats');
+
+        // Sidebar toggle
+        function toggleSidebar() {
+            sidebar.classList.toggle('hidden');
+            // Resize terminal when sidebar toggles
+            setTimeout(() => {
+                if (term && fitAddon) {
+                    fitAddon.fit();
+                    sendTerminalSize();
+                }
+            }, 350); // Wait for animation to complete
+        }
+
+        sidebarToggle.addEventListener('click', toggleSidebar);
+
+        // Keyboard shortcut for sidebar toggle (Ctrl+B)
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.key === 'b') {
+                e.preventDefault();
+                toggleSidebar();
+            }
+        });
+
+        // Initialize xterm.js
+        function initTerminal() {
+            if (term) {
+                term.dispose();
+            }
+
+            term = new Terminal({
+                cursorBlink: true,
+                fontSize: 14,
+                fontFamily: 'Monaco, Courier New, monospace',
+                theme: {
+                    background: '#000000',
+                    foreground: '#ffffff',
+                    cursor: '#ffffff',
+                    cursorAccent: '#000000',
+                    selection: 'rgba(255, 255, 255, 0.3)',
+                    black: '#000000',
+                    red: '#cd3131',
+                    green: '#0dbc79',
+                    yellow: '#e5e510',
+                    blue: '#2472c8',
+                    magenta: '#bc3fbc',
+                    cyan: '#11a8cd',
+                    white: '#e5e5e5',
+                    brightBlack: '#666666',
+                    brightRed: '#f14c4c',
+                    brightGreen: '#23d18b',
+                    brightYellow: '#f5f543',
+                    brightBlue: '#3b8eea',
+                    brightMagenta: '#d670d6',
+                    brightCyan: '#29b8db',
+                    brightWhite: '#e5e5e5'
+                },
+                scrollback: 10000,
+                convertEol: true
+            });
+
+            fitAddon = new FitAddon.FitAddon();
+            term.loadAddon(fitAddon);
+            term.loadAddon(new WebLinksAddon.WebLinksAddon());
+
+            term.open(document.getElementById('terminal'));
+            fitAddon.fit();
+
+            // Handle terminal input
+            term.onData((data) => {
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({
+                        type: 'input',
+                        data: data
+                    }));
+                }
+            });
+
+            // Handle resize
+            window.addEventListener('resize', () => {
+                if (fitAddon) {
+                    fitAddon.fit();
+                    sendTerminalSize();
+                }
+            });
+        }
+
+        // Send terminal size to server
+        function sendTerminalSize() {
+            if (ws && ws.readyState === WebSocket.OPEN && term) {
+                ws.send(JSON.stringify({
+                    type: 'resize',
+                    cols: term.cols,
+                    rows: term.rows
+                }));
+            }
+        }
 
         // Load sessions
         async function loadSessions() {
@@ -321,11 +473,11 @@
             });
 
             noSession.classList.add('hidden');
-            terminalContainer.classList.remove('hidden');
-            inputArea.classList.remove('hidden');
+            terminalContainer.classList.add('active');
+            inputArea.classList.add('active');
 
-            // Clear terminal
-            terminalOutput.textContent = '';
+            // Initialize terminal
+            initTerminal();
 
             // Connect WebSocket
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -337,6 +489,9 @@
                 statusDot.className = 'status-dot connected';
                 statusText.textContent = 'Connected';
                 updateSessionInfo();
+
+                // Send initial terminal size
+                setTimeout(sendTerminalSize, 100);
             };
 
             ws.onmessage = (event) => {
@@ -351,7 +506,7 @@
 
             ws.onerror = (error) => {
                 console.error('WebSocket error:', error);
-                appendOutput('\n[Error: Connection failed]\n', '#f48771');
+                term.write('\r\n\x1b[31m[Error: Connection failed]\x1b[0m\r\n');
             };
         }
 
@@ -363,7 +518,7 @@
                     if (message.history && message.history.length > 0) {
                         message.history.forEach(item => {
                             if (item.type === 'output') {
-                                appendOutput(item.data);
+                                term.write(item.data);
                             }
                         });
                     }
@@ -371,7 +526,7 @@
                     break;
 
                 case 'output':
-                    appendOutput(message.data);
+                    term.write(message.data);
                     break;
 
                 case 'metadata':
@@ -379,30 +534,17 @@
                     break;
 
                 case 'exit':
-                    appendOutput(`\n[Session ended with code ${message.code}]\n`, '#f48771');
+                    term.write(`\r\n\x1b[31m[Session ended with code ${message.code}]\x1b[0m\r\n`);
                     break;
 
                 case 'wrapper-disconnected':
-                    appendOutput('\n[Wrapper disconnected - waiting for reconnection...]\n', '#f48771');
+                    term.write('\r\n\x1b[33m[Wrapper disconnected - waiting for reconnection...]\x1b[0m\r\n');
                     break;
 
                 case 'error':
-                    appendOutput(`\n[Error: ${message.error}]\n`, '#f48771');
+                    term.write(`\r\n\x1b[31m[Error: ${message.error}]\x1b[0m\r\n`);
                     break;
             }
-        }
-
-        // Append output to terminal
-        function appendOutput(text, color = null) {
-            const span = document.createElement('span');
-            span.textContent = text;
-            if (color) {
-                span.style.color = color;
-            }
-            terminalOutput.appendChild(span);
-
-            // Auto-scroll to bottom
-            terminalContainer.scrollTop = terminalContainer.scrollHeight;
         }
 
         // Update session info
@@ -421,7 +563,7 @@
             sessionStats.textContent = `${meta.user || 'unknown'}@${meta.hostname || 'unknown'}`;
         }
 
-        // Send input
+        // Send input from input box
         function sendInput() {
             const input = inputBox.value;
             if (!input || !ws || ws.readyState !== WebSocket.OPEN) {
@@ -430,15 +572,18 @@
 
             ws.send(JSON.stringify({
                 type: 'input',
-                data: input + '\n'
+                data: input + '\r'
             }));
 
             inputBox.value = '';
+            term.focus();
         }
 
         // Clear terminal
         function clearTerminal() {
-            terminalOutput.textContent = '';
+            if (term) {
+                term.clear();
+            }
         }
 
         // Event listeners
@@ -447,6 +592,7 @@
 
         inputBox.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
+                e.preventDefault();
                 sendInput();
             }
         });

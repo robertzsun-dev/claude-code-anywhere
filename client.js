@@ -127,14 +127,14 @@ async function connectToSession(sessionId, serverUrl) {
 
       case 'output':
         if (terminal) {
-          terminal.write(message.data);
+          appendToTerminal(message.data);
         }
         break;
 
       case 'input-echo':
         // Input from another viewer
         if (terminal) {
-          terminal.write(message.data);
+          appendToTerminal(message.data);
         }
         break;
 
@@ -177,6 +177,15 @@ async function connectToSession(sessionId, serverUrl) {
     }
   }
 
+  function appendToTerminal(data) {
+    if (!terminal) return;
+
+    const currentContent = terminal.getContent();
+    terminal.setContent(currentContent + data);
+    terminal.setScrollPerc(100); // Auto-scroll to bottom
+    screen.render();
+  }
+
   function initializeUI(sessionData) {
     // Clear console
     console.log('\n\n');
@@ -202,8 +211,8 @@ async function connectToSession(sessionId, serverUrl) {
     });
     screen.append(statusBar);
 
-    // Terminal output area
-    terminal = blessed.log({
+    // Terminal output area (using box instead of log to avoid duplication)
+    terminal = blessed.box({
       top: 1,
       left: 0,
       width: '100%',
@@ -226,7 +235,8 @@ async function connectToSession(sessionId, serverUrl) {
       style: {
         bg: 'black',
         fg: 'white'
-      }
+      },
+      content: ''
     });
     screen.append(terminal);
 
@@ -252,7 +262,7 @@ async function connectToSession(sessionId, serverUrl) {
     if (sessionData.history) {
       for (const item of sessionData.history) {
         if (item.type === 'output') {
-          terminal.log(item.data);
+          appendToTerminal(item.data);
         }
       }
     }
@@ -319,10 +329,10 @@ async function connectToSession(sessionId, serverUrl) {
 
     inputBox.on('submit', (value) => {
       if (value) {
-        // Send input to server
+        // Send input to server with carriage return
         ws.send(JSON.stringify({
           type: 'input',
-          data: value
+          data: value + '\r'
         }));
       }
 

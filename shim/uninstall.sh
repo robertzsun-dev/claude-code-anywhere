@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Uninstall script for Claude Code Remote Access seamless wrapper
-# This restores the original claude binary
+# This removes the wrapper from /usr/local/bin
 
 set -e
 
@@ -17,56 +17,60 @@ YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
-# Find the current claude binary
-echo -e "${CYAN}1. Finding claude binary...${NC}"
-CLAUDE_BIN=$(which claude 2>/dev/null || echo "")
+WRAPPER_PATH="/usr/local/bin/claude"
 
-if [ -z "$CLAUDE_BIN" ]; then
-    echo -e "${RED}✗ Claude binary not found in PATH${NC}"
-    exit 1
-fi
+# Check if wrapper exists
+echo -e "${CYAN}1. Checking for wrapper installation...${NC}"
 
-echo -e "${GREEN}✓ Found claude at: $CLAUDE_BIN${NC}"
-
-# Resolve symlinks
-CLAUDE_REAL=$(readlink -f "$CLAUDE_BIN" 2>/dev/null || realpath "$CLAUDE_BIN" 2>/dev/null || echo "$CLAUDE_BIN")
-echo -e "${GREEN}✓ Real binary: $CLAUDE_REAL${NC}"
-
-# Check if backup exists
-CLAUDE_BACKUP="${CLAUDE_REAL}-original"
-
-if [ ! -f "$CLAUDE_BACKUP" ]; then
-    echo -e "${YELLOW}! No backup found at $CLAUDE_BACKUP${NC}"
-    echo -e "${YELLOW}  Wrapper may not be installed, or was installed differently${NC}"
+if [ ! -f "$WRAPPER_PATH" ]; then
+    echo -e "${YELLOW}! Wrapper not found at $WRAPPER_PATH${NC}"
+    echo -e "${YELLOW}  Wrapper may not be installed${NC}"
+    echo ""
+    echo -e "${CYAN}Current claude location:${NC}"
+    which claude 2>/dev/null && echo -e "${GREEN}✓ Found at: $(which claude)${NC}" || echo -e "${RED}✗ Not found in PATH${NC}"
+    echo ""
     exit 0
 fi
 
-echo -e "${GREEN}✓ Found backup at: $CLAUDE_BACKUP${NC}"
+echo -e "${GREEN}✓ Found wrapper at: $WRAPPER_PATH${NC}"
 
-# Restore the original binary
-echo ""
-echo -e "${CYAN}2. Restoring original claude binary...${NC}"
-
-if [ -w "$CLAUDE_REAL" ]; then
-    sudo_cmd=""
+# Check if it's our wrapper (look for our signature)
+if grep -q "Claude Code Remote Access Wrapper" "$WRAPPER_PATH" 2>/dev/null; then
+    echo -e "${GREEN}✓ Confirmed this is our wrapper${NC}"
 else
-    echo -e "${YELLOW}  Need sudo to modify $CLAUDE_REAL${NC}"
-    sudo_cmd="sudo"
+    echo -e "${YELLOW}! File exists but doesn't appear to be our wrapper${NC}"
+    echo -e "${YELLOW}  Proceeding with caution...${NC}"
 fi
 
-$sudo_cmd rm -f "$CLAUDE_REAL"
-$sudo_cmd mv "$CLAUDE_BACKUP" "$CLAUDE_REAL"
-
-echo -e "${GREEN}✓ Restored original claude binary${NC}"
-
-# Verify
+# Remove the wrapper
 echo ""
-echo -e "${CYAN}3. Verifying restoration...${NC}"
+echo -e "${CYAN}2. Removing wrapper...${NC}"
+echo -e "${YELLOW}  This requires sudo access${NC}"
 
-if [ -x "$CLAUDE_REAL" ] && [ ! -f "$CLAUDE_BACKUP" ]; then
-    echo -e "${GREEN}✓ Uninstallation successful!${NC}"
+if sudo rm -f "$WRAPPER_PATH"; then
+    echo -e "${GREEN}✓ Wrapper removed successfully${NC}"
 else
-    echo -e "${RED}✗ Verification failed${NC}"
+    echo -e "${RED}✗ Failed to remove wrapper${NC}"
+    exit 1
+fi
+
+# Verify removal
+echo ""
+echo -e "${CYAN}3. Verifying removal...${NC}"
+
+if [ ! -f "$WRAPPER_PATH" ]; then
+    echo -e "${GREEN}✓ Wrapper successfully removed${NC}"
+
+    # Show where claude is now
+    CURRENT_CLAUDE=$(which claude 2>/dev/null || echo "")
+    if [ -n "$CURRENT_CLAUDE" ]; then
+        echo -e "${GREEN}✓ Claude now points to: $CURRENT_CLAUDE${NC}"
+    else
+        echo -e "${YELLOW}! Warning: 'claude' command not found in PATH${NC}"
+        echo -e "${YELLOW}  You may need to reinstall Claude Code${NC}"
+    fi
+else
+    echo -e "${RED}✗ Verification failed - wrapper still exists${NC}"
     exit 1
 fi
 
@@ -127,14 +131,18 @@ echo "╔═══════════════════════�
 echo "║   Uninstallation Complete!                                 ║"
 echo "╚════════════════════════════════════════════════════════════╝"
 echo ""
-echo -e "${GREEN}The original 'claude' command has been restored.${NC}"
+echo -e "${GREEN}The wrapper has been removed from $WRAPPER_PATH${NC}"
+echo -e "${GREEN}'claude' command now uses the original binary${NC}"
 if [ "$SYSTEMD_REMOVED" = true ]; then
-    echo -e "${GREEN}The systemd service has been removed.${NC}"
+    echo -e "${GREEN}The systemd service has been removed${NC}"
 fi
 echo ""
-echo -e "${CYAN}The config file ${YELLOW}~/.claude-remote.conf${CYAN} was not removed.${NC}"
-echo -e "${CYAN}You can delete it manually if you no longer need it.${NC}"
+echo -e "${CYAN}Notes:${NC}"
+echo -e "  - The config file ${YELLOW}~/.claude-remote.conf${NC} was not removed"
+echo -e "  - You can delete it manually if you no longer need it"
+echo -e "  - The original Claude Code installation is untouched"
+echo -e "  - npm updates to Claude Code will work normally"
 echo ""
 echo -e "${CYAN}To reinstall the wrapper:${NC}"
-echo -e "  ${YELLOW}cd $(dirname "$0")/.. && ./shim/install.sh${NC}"
+echo -e "  ${YELLOW}cd $(dirname "$0")/.. && sudo ./shim/install.sh${NC}"
 echo ""
