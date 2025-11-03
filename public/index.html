@@ -144,13 +144,14 @@
             padding: 1rem;
             background: #000000;
             display: none;
-            overflow: hidden;
+            overflow: auto;
             position: relative;
         }
 
         #terminal {
             height: 100%;
-            width: 100%;
+            width: auto;
+            min-width: 100%;
         }
 
         #terminal-container.active {
@@ -354,14 +355,12 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/xterm-addon-web-links@0.9.0/lib/xterm-addon-web-links.js"></script>
     <script>
         let currentSession = null;
         let ws = null;
         let sessions = [];
         let term = null;
-        let fitAddon = null;
 
         // DOM elements
         const sidebar = document.getElementById('sidebar');
@@ -378,12 +377,7 @@
         // Sidebar toggle
         function toggleSidebar() {
             sidebar.classList.toggle('hidden');
-            // Resize terminal after sidebar animation completes
-            setTimeout(() => {
-                if (fitAddon) {
-                    fitAddon.fit();
-                }
-            }, 200);
+            // No resize needed - terminal maintains natural PTY size
         }
 
         sidebarToggle.addEventListener('click', toggleSidebar);
@@ -402,6 +396,8 @@
                 term.dispose();
             }
 
+            // Don't specify cols/rows - let terminal use natural PTY dimensions
+            // This allows horizontal scrolling on small screens
             term = new Terminal({
                 cursorBlink: true,
                 fontSize: 14,
@@ -434,23 +430,8 @@
                 scrollOnUserInput: true
             });
 
-            fitAddon = new FitAddon.FitAddon();
-            term.loadAddon(fitAddon);
             term.loadAddon(new WebLinksAddon.WebLinksAddon());
-
             term.open(document.getElementById('terminal'));
-
-            // Use requestAnimationFrame to ensure DOM is ready
-            requestAnimationFrame(() => {
-                fitAddon.fit();
-            });
-
-            // Resize terminal when window resizes
-            window.addEventListener('resize', () => {
-                if (fitAddon) {
-                    fitAddon.fit();
-                }
-            });
 
             // Handle terminal input
             term.onData((data) => {
