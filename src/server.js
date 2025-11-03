@@ -432,11 +432,9 @@ async function handleStartSession(req, res) {
         tmuxArgs.push('-x', cols.toString(), '-y', rows.toString());
       }
 
-      // The command to run inside tmux: bash script that logs and runs wrapper
-      // We use a shell script to capture any errors
-      // IMPORTANT: Add node bin directory to PATH so claude's shebang (#!/usr/bin/env node) works
-      const logFile = `/tmp/claude-session-${sessionId}.log`;
-      const shellCommand = `exec > ${logFile} 2>&1; export PATH="${nodeBinDir}:$PATH"; echo "Starting wrapper at $(date)"; echo "PATH=$PATH"; echo "Node: ${nodePath}"; echo "Claude: ${claudeCmd}"; echo "Wrapper: ${wrapperPath}"; CLAUDE_CMD=${claudeCmd} CLAUDE_SEAMLESS_MODE=true CLAUDE_REMOTE_SERVER=ws://${HOST}:${PORT} CLAUDE_COLS=${cols || 80} CLAUDE_ROWS=${rows || 24} ${nodePath} ${wrapperPath}; echo "Wrapper exited with code $? at $(date)"`;
+      // The command to run inside tmux: run wrapper with proper PATH
+      // Add node bin directory to PATH so claude's shebang (#!/usr/bin/env node) works
+      const shellCommand = `export PATH="${nodeBinDir}:$PATH"; CLAUDE_CMD=${claudeCmd} CLAUDE_SEAMLESS_MODE=true CLAUDE_REMOTE_SERVER=ws://${HOST}:${PORT} CLAUDE_COLS=${cols || 80} CLAUDE_ROWS=${rows || 24} exec ${nodePath} ${wrapperPath}`;
 
       tmuxArgs.push('/bin/bash', '-c', shellCommand);
 
@@ -478,8 +476,7 @@ async function handleStartSession(req, res) {
         });
       });
 
-      console.log(`[Session] Created tmux session ${tmuxSessionName} in ${resolvedPath} (running wrapper inside tmux)`);
-      console.log(`[Session] Logs: ${logFile}`);
+      console.log(`[Session] Created tmux session ${tmuxSessionName} in ${resolvedPath}`);
 
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
@@ -487,8 +484,7 @@ async function handleStartSession(req, res) {
         sessionId: 'pending',  // Session ID will be assigned by wrapper when it connects
         tmuxSession: tmuxSessionName,
         workingDir: resolvedPath,
-        logFile: logFile,
-        message: `Session starting in ${resolvedPath}. Attach with: tmux attach -t ${tmuxSessionName}\nLogs: ${logFile}`
+        message: `Session starting in ${resolvedPath}. Attach with: tmux attach -t ${tmuxSessionName}`
       }));
 
     } catch (err) {
