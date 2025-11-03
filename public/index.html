@@ -74,7 +74,6 @@
 
         #install-btn,
         #notification-toggle,
-        #test-notification-btn,
         #debug-btn {
             background: transparent;
             border: 1px solid rgba(255, 255, 255, 0.1);
@@ -92,7 +91,6 @@
 
         #install-btn:hover,
         #notification-toggle:hover,
-        #test-notification-btn:hover,
         #debug-btn:hover {
             background: rgba(255, 255, 255, 0.05);
             border-color: rgba(255, 255, 255, 0.2);
@@ -101,7 +99,6 @@
 
         #install-btn:active,
         #notification-toggle:active,
-        #test-notification-btn:active,
         #debug-btn:active {
             transform: scale(0.95);
         }
@@ -709,11 +706,8 @@
             <button id="install-btn" title="Install app" onclick="showInstallPrompt()" style="display: none;">
                 📲
             </button>
-            <button id="notification-toggle" title="Enable notifications" onclick="requestNotificationPermission()">
+            <button id="notification-toggle" title="Enable notifications" onclick="toggleNotifications()">
                 🔔
-            </button>
-            <button id="test-notification-btn" title="Test notification" onclick="testNotificationNow()" style="display: flex;">
-                🔔✨
             </button>
             <button id="debug-btn" title="Debug notifications" onclick="showDebugPanel()" style="display: flex;">
                 🐛
@@ -764,6 +758,10 @@
         let notificationsEnabled = false;
         let lastOutputTime = Date.now();
         let waitingForInput = false;
+        let reconnectTimer = null;
+        let reconnectAttempts = 0;
+        let maxReconnectAttempts = 10;
+        let shouldReconnect = true;
 
         // Register service worker for PWA
         if ('serviceWorker' in navigator) {
@@ -945,15 +943,6 @@
             }
         }
 
-        function resetNotificationState() {
-            if (confirm('⚠️ This will reset notification settings.\n\nAfter clicking OK:\n1. Delete this app from your home screen\n2. Open Settings → Safari → Clear History and Website Data\n3. Restart your iPhone\n4. Reinstall the app\n5. Try notifications again\n\nClear local settings now?')) {
-                localStorage.removeItem('notificationsEnabled');
-                notificationsEnabled = false;
-                updateNotificationButton();
-                updateDebugInfo();
-                alert('✅ Local settings cleared!\n\nNow follow the steps:\n1. Delete app from home screen\n2. Settings → Safari → Clear History\n3. Restart iPhone\n4. Reinstall app from Safari');
-            }
-        }
 
         // Initialize install button after DOM loads
         window.addEventListener('DOMContentLoaded', () => {
@@ -961,6 +950,21 @@
             installModal = document.getElementById('install-modal');
             updateInstallButton();
         });
+
+        // Toggle notifications on/off
+        async function toggleNotifications() {
+            // If already enabled, disable them
+            if (notificationsEnabled) {
+                notificationsEnabled = false;
+                localStorage.setItem('notificationsEnabled', 'false');
+                updateNotificationButton();
+                console.log('[Notifications] Disabled by user');
+                return;
+            }
+
+            // Otherwise, enable them
+            await requestNotificationPermission();
+        }
 
         // Request notification permission
         async function requestNotificationPermission() {
@@ -1026,7 +1030,7 @@
             if (btn) {
                 if (notificationsEnabled) {
                     btn.classList.add('enabled');
-                    btn.title = 'Notifications enabled';
+                    btn.title = 'Notifications enabled - click to disable';
                 } else {
                     btn.classList.remove('enabled');
                     btn.title = 'Enable notifications';
@@ -1036,14 +1040,26 @@
 
         // Show a notification
         function showNotification(title, body) {
+            console.log('[Notification] showNotification called:', {
+                title,
+                notificationsEnabled,
+                permission: Notification.permission,
+                hasFocus: document.hasFocus(),
+                isStandalone: isStandalone()
+            });
+
             if (!notificationsEnabled || Notification.permission !== 'granted') {
+                console.log('[Notification] Blocked: notifications not enabled or permission not granted');
                 return;
             }
 
-            // Don't show if page is focused
-            if (document.hasFocus()) {
+            // Don't show if page is focused (except for iOS PWA where user might have app open)
+            if (document.hasFocus() && !isStandalone()) {
+                console.log('[Notification] Blocked: page has focus and not in standalone mode');
                 return;
             }
+
+            console.log('[Notification] Showing notification:', title);
 
             const notification = new Notification(title, {
                 body: body,
@@ -1064,12 +1080,22 @@
         let lastSignificantOutput = '';
         let noOutputTimer = null;
 
-        function detectWaitingForInput(data) {
-            // Store last output for pattern matching
-            lastSignificantOutput = (lastSignificantOutput + data).slice(-500); // Keep last 500 chars
+        function detectWaitingForInput(data, isReconnectCheck = false) {
+            // Store last output for pattern matching (unless this is a reconnect check)
+            if (!isReconnectCheck) {
+                lastSignificantOutput = (lastSignificantOutput + data).slice(-500); // Keep last 500 chars
+            }
 
             const text = data.toLowerCase();
             const fullText = lastSignificantOutput.toLowerCase();
+
+            // Only log on reconnect checks, not on every output message
+            if (isReconnectCheck) {
+                console.log('[Detection] Checking buffer after reconnect:', {
+                    bufferLength: lastSignificantOutput.length,
+                    lastChars: lastSignificantOutput.slice(-100)
+                });
+            }
 
             // Common patterns that indicate Claude is waiting for user input
             const waitingPatterns = [
@@ -1111,11 +1137,22 @@
                 'needs approval'
             ];
 
-            const hasWaitingPattern = waitingPatterns.some(pattern => fullText.includes(pattern));
+            const matchedPattern = waitingPatterns.find(pattern => fullText.includes(pattern));
+            const hasWaitingPattern = !!matchedPattern;
 
             // Detect Claude Code specific patterns (tool use blocks, questions)
             const hasToolUse = fullText.includes('<function_calls>') || fullText.includes('tool use');
             const hasQuestion = fullText.includes('?') && text.trim().endsWith('?');
+
+            if (hasWaitingPattern || hasToolUse || hasQuestion) {
+                console.log('[Detection] Pattern match:', {
+                    matchedPattern,
+                    hasWaitingPattern,
+                    hasToolUse,
+                    hasQuestion,
+                    lastOutput: lastSignificantOutput.slice(-100)
+                });
+            }
 
             // Clear any existing timer
             if (noOutputTimer) {
@@ -1131,7 +1168,9 @@
                     // Check if it looks like a prompt (ends with ?, has tool use, etc)
                     if (recent.includes('?') || recent.includes('(y/n)') ||
                         recent.includes('[y/n]') || recent.includes('approve')) {
-                        console.log('[Notification] Detected stalled output with prompt pattern');
+                        console.log('[Notification] Detected stalled output with prompt pattern', {
+                            recentText: recent.slice(-100)
+                        });
                         triggerNotification();
                     }
                 }
@@ -1139,49 +1178,35 @@
 
             // Immediate trigger for clear waiting patterns
             if (hasWaitingPattern || (hasToolUse && hasQuestion)) {
-                console.log('[Notification] Detected waiting pattern:', { hasWaitingPattern, hasToolUse, hasQuestion });
+                console.log('[Notification] Detected waiting pattern:', { hasWaitingPattern, hasToolUse, hasQuestion, matchedPattern });
                 triggerNotification();
             }
         }
 
         function triggerNotification() {
+            console.log('[Notification] triggerNotification called:', {
+                waitingForInput,
+                notificationsEnabled,
+                permission: Notification.permission
+            });
+
             if (!waitingForInput && notificationsEnabled) {
                 waitingForInput = true;
                 showNotification(
                     'Claude needs your attention',
                     'Claude Code is waiting for your input or response'
                 );
+            } else {
+                console.log('[Notification] Blocked - waitingForInput:', waitingForInput, 'notificationsEnabled:', notificationsEnabled);
             }
-        }
-
-        // Manual test notification function
-        function testNotificationNow() {
-            console.log('[Test] Manual notification trigger');
-            if (!notificationsEnabled || Notification.permission !== 'granted') {
-                alert('❌ Notifications not enabled\n\nPlease enable notifications first by tapping the 🔔 button.');
-                return;
-            }
-
-            // Temporarily reset waiting flag to allow notification
-            const wasWaiting = waitingForInput;
-            waitingForInput = false;
-
-            showNotification(
-                '🔔 Test Notification',
-                'If you see this, notifications are working perfectly!'
-            );
-
-            // Reset flag after a moment
-            setTimeout(() => {
-                waitingForInput = wasWaiting;
-            }, 1000);
         }
 
         // Check notification permission on load
-        if (localStorage.getItem('notificationsEnabled') === 'true') {
-            if (Notification.permission === 'granted') {
-                notificationsEnabled = true;
-            }
+        const savedNotificationState = localStorage.getItem('notificationsEnabled');
+        if (savedNotificationState === 'true' && Notification.permission === 'granted') {
+            notificationsEnabled = true;
+        } else if (savedNotificationState === 'false') {
+            notificationsEnabled = false;
         }
         // Update button state after DOM is loaded
         window.addEventListener('DOMContentLoaded', updateNotificationButton);
@@ -1376,13 +1401,21 @@
         }
 
         // Connect to session
-        function connectToSession(sessionId) {
+        function connectToSession(sessionId, isReconnect = false) {
+            // Clear any pending reconnect timer
+            if (reconnectTimer) {
+                clearTimeout(reconnectTimer);
+                reconnectTimer = null;
+            }
+
             // Close existing connection
             if (ws) {
+                shouldReconnect = false; // Prevent auto-reconnect when we manually close
                 ws.close();
             }
 
             currentSession = sessionId;
+            shouldReconnect = true; // Enable auto-reconnect for this session
 
             // Update UI
             document.querySelectorAll('.session-item').forEach(item => {
@@ -1391,6 +1424,12 @@
 
             noSession.classList.add('hidden');
             terminalContainer.classList.add('active');
+
+            if (isReconnect) {
+                statusDot.className = 'status-dot';
+                statusText.textContent = `Reconnecting... (${reconnectAttempts + 1}/${maxReconnectAttempts})`;
+                console.log('[Reconnect] Attempting to reconnect:', { attempt: reconnectAttempts + 1, sessionId });
+            }
 
             // Don't initialize terminal yet - wait for session-attached with PTY dimensions
 
@@ -1401,9 +1440,13 @@
             ws = new WebSocket(wsUrl);
 
             ws.onopen = () => {
+                console.log('[WebSocket] Connected', { sessionId, isReconnect });
                 statusDot.className = 'status-dot connected';
                 statusText.textContent = 'Connected';
                 updateSessionInfo();
+
+                // Reset reconnect counter on successful connection
+                reconnectAttempts = 0;
 
                 // Note: Not sending terminal size - PTY is locked to local terminal size
             };
@@ -1413,14 +1456,43 @@
                 handleMessage(message);
             };
 
-            ws.onclose = () => {
+            ws.onclose = (event) => {
+                console.log('[WebSocket] Closed', {
+                    sessionId,
+                    shouldReconnect,
+                    code: event.code,
+                    reason: event.reason,
+                    wasClean: event.wasClean
+                });
+
                 statusDot.className = 'status-dot disconnected';
-                statusText.textContent = 'Disconnected';
+
+                // Auto-reconnect if enabled and we haven't exceeded max attempts
+                if (shouldReconnect && reconnectAttempts < maxReconnectAttempts) {
+                    const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 10000); // Exponential backoff, max 10s
+                    statusText.textContent = `Reconnecting in ${Math.ceil(delay/1000)}s...`;
+
+                    reconnectTimer = setTimeout(() => {
+                        reconnectAttempts++;
+                        connectToSession(currentSession, true);
+                    }, delay);
+                } else if (reconnectAttempts >= maxReconnectAttempts) {
+                    statusText.textContent = 'Connection failed - tap to retry';
+                    statusText.style.cursor = 'pointer';
+                    statusText.onclick = () => {
+                        reconnectAttempts = 0;
+                        connectToSession(currentSession, true);
+                    };
+                } else {
+                    statusText.textContent = 'Disconnected';
+                }
             };
 
             ws.onerror = (error) => {
-                console.error('WebSocket error:', error);
-                term.write('\r\n\x1b[31m[Error: Connection failed]\x1b[0m\r\n');
+                console.error('[WebSocket] Error:', error);
+                if (term && !isReconnect) {
+                    term.write('\r\n\x1b[31m[Error: Connection failed]\x1b[0m\r\n');
+                }
             };
         }
 
@@ -1428,6 +1500,16 @@
         function handleMessage(message) {
             switch (message.type) {
                 case 'session-attached':
+                    console.log('[Session] Attached to session, resetting notification detection state');
+
+                    // Reset notification detection state
+                    lastSignificantOutput = '';
+                    waitingForInput = false;
+                    if (noOutputTimer) {
+                        clearTimeout(noOutputTimer);
+                        noOutputTimer = null;
+                    }
+
                     // Initialize terminal with PTY dimensions
                     if (message.metadata && message.metadata.cols && message.metadata.rows) {
                         initTerminal(message.metadata.cols, message.metadata.rows);
@@ -1436,13 +1518,26 @@
                         initTerminal(80, 24);
                     }
 
-                    // Display history
+                    // Display history and build detection buffer
                     if (message.history && message.history.length > 0) {
+                        let historyText = '';
                         message.history.forEach(item => {
                             if (item.type === 'output') {
                                 term.write(item.data);
+                                historyText += item.data;
                             }
                         });
+
+                        // Populate detection buffer with last 500 chars of history
+                        lastSignificantOutput = historyText.slice(-500);
+                        console.log('[Session] Populated detection buffer from history:', {
+                            historyLength: historyText.length,
+                            bufferLength: lastSignificantOutput.length,
+                            lastChars: lastSignificantOutput.slice(-100)
+                        });
+
+                        // Check if history ends with a prompt pattern
+                        detectWaitingForInput('', true); // Pass empty string but trigger check on existing buffer
                     }
                     updateSessionInfo(message.metadata);
                     break;
@@ -1737,6 +1832,51 @@
 
         // Initial load
         loadSessions();
+
+        // Handle page visibility changes (iOS app backgrounding/foregrounding)
+        document.addEventListener('visibilitychange', () => {
+            console.log('[Visibility] State changed:', {
+                hidden: document.hidden,
+                visibilityState: document.visibilityState,
+                hasSession: !!currentSession,
+                wsState: ws ? ws.readyState : 'null'
+            });
+
+            if (!document.hidden && currentSession) {
+                // Page became visible - check connection
+                if (!ws || ws.readyState !== WebSocket.OPEN) {
+                    console.log('[Visibility] Page visible but disconnected - reconnecting immediately');
+                    reconnectAttempts = 0; // Reset attempts for manual reconnect
+                    connectToSession(currentSession, true);
+                }
+            }
+        });
+
+        // Handle app resume (iOS specific)
+        window.addEventListener('pageshow', (event) => {
+            // event.persisted indicates the page was loaded from cache (back/forward navigation)
+            if (event.persisted && currentSession) {
+                console.log('[PageShow] Page restored from cache - checking connection');
+                if (!ws || ws.readyState !== WebSocket.OPEN) {
+                    reconnectAttempts = 0;
+                    connectToSession(currentSession, true);
+                }
+            }
+        });
+
+        // Handle online/offline events
+        window.addEventListener('online', () => {
+            console.log('[Network] Back online');
+            if (currentSession && (!ws || ws.readyState !== WebSocket.OPEN)) {
+                console.log('[Network] Reconnecting after network restored');
+                reconnectAttempts = 0;
+                connectToSession(currentSession, true);
+            }
+        });
+
+        window.addEventListener('offline', () => {
+            console.log('[Network] Offline');
+        });
     </script>
 
     <!-- File Browser Modal -->
@@ -1793,7 +1933,6 @@
                 <div style="display: flex; flex-direction: column; gap: 0.5rem;">
                     <button class="btn btn-primary" onclick="testNotificationRequest()">1. Request Permission</button>
                     <button class="btn btn-primary" onclick="testShowNotification()">2. Show Test Notification</button>
-                    <button class="btn btn-secondary" onclick="resetNotificationState()" style="background: #dc2626; border-color: #dc2626;">🔄 Reset & Force Retry</button>
                     <button class="btn btn-secondary" onclick="closeDebugPanel()">Close</button>
                 </div>
             </div>
