@@ -141,16 +141,16 @@
 
         #terminal-container {
             flex: 1;
-            padding: 0;
+            padding: 1rem;
             background: #000000;
             display: none;
-            overflow: auto;
+            overflow: hidden;
             position: relative;
         }
 
         #terminal {
-            padding: 1rem;
-            min-width: max-content;
+            width: 100%;
+            height: 100%;
         }
 
         #terminal-container.active {
@@ -376,7 +376,19 @@
         // Sidebar toggle
         function toggleSidebar() {
             sidebar.classList.toggle('hidden');
-            // No terminal resize needed - natural PTY size is maintained
+            // Resize terminal after sidebar animation completes
+            setTimeout(() => {
+                const container = document.getElementById('terminal-container');
+                if (term && container) {
+                    const charWidth = 9;
+                    const charHeight = 17;
+                    const availableWidth = container.clientWidth - 32;
+                    const availableHeight = container.clientHeight - 32;
+                    const newCols = Math.max(Math.floor(availableWidth / charWidth), 80);
+                    const newRows = Math.max(Math.floor(availableHeight / charHeight), 24);
+                    term.resize(newCols, newRows);
+                }
+            }, 200);
         }
 
         sidebarToggle.addEventListener('click', toggleSidebar);
@@ -395,7 +407,21 @@
                 term.dispose();
             }
 
+            // Calculate terminal dimensions based on available space
+            const container = document.getElementById('terminal-container');
+            const charWidth = 9;  // Approximate width of a monospace character at 14px
+            const charHeight = 17; // Approximate height with line spacing
+
+            // Calculate dimensions to fill the container
+            const availableWidth = container.clientWidth - 32; // Account for padding
+            const availableHeight = container.clientHeight - 32;
+
+            const cols = Math.floor(availableWidth / charWidth);
+            const rows = Math.floor(availableHeight / charHeight);
+
             term = new Terminal({
+                cols: Math.max(cols, 80), // At least 80 columns
+                rows: Math.max(rows, 24), // At least 24 rows
                 cursorBlink: true,
                 fontSize: 14,
                 fontFamily: 'Monaco, Courier New, monospace',
@@ -424,16 +450,27 @@
                 },
                 scrollback: 10000,
                 convertEol: true,
-                // Don't wrap lines - let horizontal scroll handle overflow
                 lineHeight: 1.2,
                 scrollOnUserInput: true
             });
 
-            // Don't use fitAddon - maintain PTY's natural size to prevent wrapping issues
-            // This allows horizontal scrolling on small screens instead of broken line wrapping
             term.loadAddon(new WebLinksAddon.WebLinksAddon());
 
             term.open(document.getElementById('terminal'));
+
+            // Resize terminal when window resizes
+            const resizeTerminal = () => {
+                const availableWidth = container.clientWidth - 32;
+                const availableHeight = container.clientHeight - 32;
+                const newCols = Math.max(Math.floor(availableWidth / charWidth), 80);
+                const newRows = Math.max(Math.floor(availableHeight / charHeight), 24);
+
+                if (term && (term.cols !== newCols || term.rows !== newRows)) {
+                    term.resize(newCols, newRows);
+                }
+            };
+
+            window.addEventListener('resize', resizeTerminal);
 
             // Handle terminal input
             term.onData((data) => {
