@@ -512,8 +512,18 @@
                 cols: term.cols,
                 rows: term.rows,
                 element: term.element,
-                elementWidth: term.element?.offsetWidth
+                elementWidth: term.element?.offsetWidth,
+                elementScrollWidth: term.element?.scrollWidth
             });
+
+            // Force terminal to not shrink - set min-width based on cols
+            // Approximate: 9px per character for Monaco 14px
+            const minWidth = (cols || 80) * 9;
+            if (term.element) {
+                term.element.style.minWidth = `${minWidth}px`;
+                term.element.style.width = 'max-content';
+                console.log('Set terminal min-width:', minWidth);
+            }
 
             // Handle terminal input
             term.onData((data) => {
@@ -673,6 +683,13 @@
                                 to: { cols: message.data.cols, rows: message.data.rows }
                             });
                             term.resize(message.data.cols, message.data.rows);
+
+                            // Update element width after resize
+                            const minWidth = message.data.cols * 9;
+                            if (term.element) {
+                                term.element.style.minWidth = `${minWidth}px`;
+                                term.element.style.width = 'max-content';
+                            }
                         }
                     }
                     updateSessionInfo(message.data);
