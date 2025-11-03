@@ -291,8 +291,7 @@
             overflow: auto;
             position: relative;
             -webkit-overflow-scrolling: touch;
-            touch-action: manipulation;
-            overscroll-behavior: contain;
+            touch-action: pan-y;
             min-width: 0;
         }
 
@@ -301,11 +300,9 @@
         }
 
         #terminal .xterm-viewport {
-            overflow-y: scroll !important;
+            overflow-y: auto !important;
             overflow-x: hidden !important;
             -webkit-overflow-scrolling: touch;
-            overscroll-behavior-y: contain;
-            scroll-behavior: smooth;
         }
 
         #terminal .xterm-screen canvas {
