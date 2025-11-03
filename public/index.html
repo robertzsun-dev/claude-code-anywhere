@@ -1379,21 +1379,19 @@
                 return;
             }
 
-            // Create a state key for the sessions (without age, which changes frequently)
+            // Create a state key for the sessions (excluding active state and age)
             const sessionStateKey = sessions.map(s =>
-                `${s.id}:${s.metadata.hostname}:${s.metadata.cwd}:${s.id === currentSession}`
+                `${s.id}:${s.metadata.hostname}:${s.metadata.cwd}`
             ).join('|');
 
-            // Only rebuild DOM if sessions actually changed (not just age)
+            // Only rebuild DOM if sessions actually changed (add/remove/metadata change)
             if (sessionStateKey !== lastSessionsState) {
                 lastSessionsState = sessionStateKey;
 
-                // Generate new HTML
+                // Generate new HTML (without active class initially)
                 const newHTML = sessions.map(session => {
-                    const isActive = session.id === currentSession ? 'active' : '';
-
                     return `
-                        <div class="session-item ${isActive}" data-session-id="${session.id}">
+                        <div class="session-item" data-session-id="${session.id}">
                             <div class="session-id">${session.id}</div>
                             <div class="session-meta">
                                 ${session.metadata.hostname || 'Unknown host'}<br>
@@ -1414,6 +1412,16 @@
                     });
                 });
             }
+
+            // Update active state without rebuilding DOM (doesn't cause focus loss)
+            document.querySelectorAll('.session-item').forEach(item => {
+                const sessionId = item.dataset.sessionId;
+                if (sessionId === currentSession) {
+                    item.classList.add('active');
+                } else {
+                    item.classList.remove('active');
+                }
+            });
 
             // Update ages without touching DOM structure (doesn't cause focus loss)
             document.querySelectorAll('.session-age').forEach(ageElement => {
