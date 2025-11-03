@@ -1353,13 +1353,26 @@
             }
         }
 
+        // Track last session count to detect add/remove
+        let lastSessionCount = 0;
+        let isInitialLoad = true;
+
         // Load sessions
-        async function loadSessions() {
+        async function loadSessions(forceFullRender = false) {
             try {
                 const response = await fetch('/sessions');
                 const data = await response.json();
                 sessions = data.sessions;
-                renderSessions();
+
+                // Full render if: initial load, forced, or session count changed
+                if (isInitialLoad || forceFullRender || sessions.length !== lastSessionCount) {
+                    fullRenderSessions();
+                    lastSessionCount = sessions.length;
+                    isInitialLoad = false;
+                } else {
+                    // Just update display (ages, active state) without rebuilding DOM
+                    updateSessionDisplay();
+                }
             } catch (error) {
                 console.error('Error loading sessions:', error);
                 sessionList.innerHTML = '<div style="padding: 1rem; color: #f48771;">Error loading sessions</div>';
@@ -1368,55 +1381,44 @@
             }
         }
 
-        // Track last rendered sessions to detect actual changes
-        let lastSessionsState = null;
-
-        // Render session list
-        function renderSessions() {
+        // Full render - rebuilds entire DOM (only called when sessions add/remove)
+        function fullRenderSessions() {
             if (sessions.length === 0) {
                 sessionList.innerHTML = '<div style="padding: 1rem; color: #858585;">No active sessions</div>';
-                lastSessionsState = null;
                 return;
             }
 
-            // Create a state key for the sessions (excluding active state and age)
-            // Sort by ID to ensure consistent ordering
-            const sessionStateKey = sessions
-                .slice()
-                .sort((a, b) => a.id.localeCompare(b.id))
-                .map(s => `${s.id}:${s.metadata.hostname || 'unknown'}:${s.metadata.cwd || 'unknown'}`)
-                .join('|');
-
-            // Only rebuild DOM if sessions actually changed (add/remove/metadata change)
-            if (sessionStateKey !== lastSessionsState) {
-                lastSessionsState = sessionStateKey;
-
-                // Generate new HTML (without active class initially)
-                const newHTML = sessions.map(session => {
-                    return `
-                        <div class="session-item" data-session-id="${session.id}">
-                            <div class="session-id">${session.id}</div>
-                            <div class="session-meta">
-                                ${session.metadata.hostname || 'Unknown host'}<br>
-                                ${session.metadata.cwd || '~'}<br>
-                                <span class="session-age" data-created="${session.created}">Calculating...</span>
-                            </div>
+            // Generate new HTML
+            const html = sessions.map(session => {
+                return `
+                    <div class="session-item" data-session-id="${session.id}">
+                        <div class="session-id">${session.id}</div>
+                        <div class="session-meta">
+                            ${session.metadata.hostname || 'Unknown host'}<br>
+                            ${session.metadata.cwd || '~'}<br>
+                            <span class="session-age" data-created="${session.created}">Calculating...</span>
                         </div>
-                    `;
-                }).join('');
+                    </div>
+                `;
+            }).join('');
 
-                sessionList.innerHTML = newHTML;
+            sessionList.innerHTML = html;
 
-                // Add click handlers
-                document.querySelectorAll('.session-item').forEach(item => {
-                    item.addEventListener('click', () => {
-                        const sessionId = item.dataset.sessionId;
-                        connectToSession(sessionId);
-                    });
+            // Add click handlers
+            document.querySelectorAll('.session-item').forEach(item => {
+                item.addEventListener('click', () => {
+                    const sessionId = item.dataset.sessionId;
+                    connectToSession(sessionId);
                 });
-            }
+            });
 
-            // Update active state without rebuilding DOM (doesn't cause focus loss)
+            // Update display
+            updateSessionDisplay();
+        }
+
+        // Update display only - no DOM rebuild (safe to call during typing)
+        function updateSessionDisplay() {
+            // Update active state
             document.querySelectorAll('.session-item').forEach(item => {
                 const sessionId = item.dataset.sessionId;
                 if (sessionId === currentSession) {
@@ -1426,7 +1428,7 @@
                 }
             });
 
-            // Update ages without touching DOM structure (doesn't cause focus loss)
+            // Update ages
             document.querySelectorAll('.session-age').forEach(ageElement => {
                 const created = ageElement.dataset.created;
                 if (created) {
@@ -1879,21 +1881,8 @@
         // Add event listener for Start New Session button
         document.getElementById('start-session-btn').addEventListener('click', openFileBrowser);
 
-        // Auto-refresh session list (but only when terminal doesn't have focus)
-        setInterval(() => {
-            // Check if terminal has focus
-            const activeElement = document.activeElement;
-            const terminalHasFocus = activeElement && (
-                activeElement.closest('.xterm') ||
-                activeElement.classList.contains('xterm') ||
-                activeElement.closest('#terminal')
-            );
-
-            // Only refresh if terminal doesn't have focus
-            if (!terminalHasFocus) {
-                loadSessions();
-            }
-        }, 10000); // Check every 10 seconds
+        // Auto-refresh session list (safe now - only updates ages/active state, no DOM rebuild)
+        setInterval(loadSessions, 10000);
 
         // Initial load
         loadSessions();
