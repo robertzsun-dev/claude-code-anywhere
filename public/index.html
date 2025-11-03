@@ -1497,13 +1497,12 @@
                 if (statusDot.className !== 'status-dot disconnected') {
                     statusDot.className = 'status-dot disconnected';
                 }
-                if (statusText.textContent !== 'Disconnected - reload to reconnect') {
-                    statusText.textContent = 'Disconnected - reload to reconnect';
+                if (statusText.textContent !== 'Reconnecting...') {
+                    statusText.textContent = 'Reconnecting...';
                 }
 
-                // RECONNECTION DISABLED - testing if this is the cause of terminal refresh
-                /*
                 // Reconnect immediately (with small delay to avoid hammering)
+                // Terminal won't be reinitialized, so no focus loss
                 if (currentSession && !isReconnecting) {
                     isReconnecting = true;
                     setTimeout(() => {
@@ -1511,7 +1510,6 @@
                         connectToSession(currentSession, true);
                     }, 1000);
                 }
-                */
             };
 
             ws.onerror = (error) => {
@@ -1536,41 +1534,47 @@
                         noOutputTimer = null;
                     }
 
-                    // Initialize terminal with PTY dimensions
-                    if (message.metadata && message.metadata.cols && message.metadata.rows) {
-                        initTerminal(message.metadata.cols, message.metadata.rows);
+                    // Initialize terminal with PTY dimensions (only if not already initialized)
+                    if (!term) {
+                        if (message.metadata && message.metadata.cols && message.metadata.rows) {
+                            initTerminal(message.metadata.cols, message.metadata.rows);
+                        } else {
+                            // Fallback to default dimensions if not provided
+                            initTerminal(80, 24);
+                        }
+
+                        // Display history and build detection buffer (only on initial connection)
+                        if (message.history && message.history.length > 0) {
+                            let historyText = '';
+                            message.history.forEach(item => {
+                                if (item.type === 'output') {
+                                    term.write(item.data);
+                                    historyText += item.data;
+                                }
+                            });
+
+                            // Populate detection buffer with last 500 chars of history
+                            lastSignificantOutput = historyText.slice(-500);
+                            console.log('[Session] Populated detection buffer from history:', {
+                                historyLength: historyText.length,
+                                bufferLength: lastSignificantOutput.length,
+                                lastChars: lastSignificantOutput.slice(-100)
+                            });
+
+                            // Check if history ends with a prompt pattern
+                            detectWaitingForInput('', true); // Pass empty string but trigger check on existing buffer
+
+                            // Scroll to bottom after loading history (use setTimeout to ensure terminal is fully rendered)
+                            setTimeout(() => {
+                                if (term) {
+                                    term.scrollToBottom();
+                                }
+                            }, 100);
+                        }
                     } else {
-                        // Fallback to default dimensions if not provided
-                        initTerminal(80, 24);
-                    }
-
-                    // Display history and build detection buffer
-                    if (message.history && message.history.length > 0) {
-                        let historyText = '';
-                        message.history.forEach(item => {
-                            if (item.type === 'output') {
-                                term.write(item.data);
-                                historyText += item.data;
-                            }
-                        });
-
-                        // Populate detection buffer with last 500 chars of history
-                        lastSignificantOutput = historyText.slice(-500);
-                        console.log('[Session] Populated detection buffer from history:', {
-                            historyLength: historyText.length,
-                            bufferLength: lastSignificantOutput.length,
-                            lastChars: lastSignificantOutput.slice(-100)
-                        });
-
-                        // Check if history ends with a prompt pattern
-                        detectWaitingForInput('', true); // Pass empty string but trigger check on existing buffer
-
-                        // Scroll to bottom after loading history (use setTimeout to ensure terminal is fully rendered)
-                        setTimeout(() => {
-                            if (term) {
-                                term.scrollToBottom();
-                            }
-                        }, 100);
+                        // Terminal already exists (reconnection) - just show a reconnection message
+                        console.log('[Session] Reconnected - terminal already initialized');
+                        term.write('\r\n\x1b[32m[Reconnected]\x1b[0m\r\n');
                     }
                     updateSessionInfo(message.metadata);
                     break;
