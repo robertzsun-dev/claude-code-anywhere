@@ -291,7 +291,8 @@
             overflow: auto;
             position: relative;
             -webkit-overflow-scrolling: touch;
-            touch-action: pan-x pan-y;
+            touch-action: manipulation;
+            overscroll-behavior: contain;
             min-width: 0;
         }
 
@@ -303,6 +304,8 @@
             overflow-y: scroll !important;
             overflow-x: hidden !important;
             -webkit-overflow-scrolling: touch;
+            overscroll-behavior-y: contain;
+            scroll-behavior: smooth;
         }
 
         #terminal .xterm-screen canvas {
@@ -417,14 +420,6 @@
             width: 100%;
         }
 
-        .keyboard-hints {
-            font-size: 0.6875rem;
-            color: #52525b;
-            padding: 0.75rem 1.25rem;
-            text-align: center;
-            background: #000000;
-            border-top: 1px solid rgba(255, 255, 255, 0.06);
-        }
 
         #sidebar-toggle {
             background: transparent;
@@ -734,10 +729,6 @@
 
             <div id="terminal-container">
                 <div id="terminal"></div>
-            </div>
-
-            <div class="keyboard-hints">
-                Press Ctrl+Shift+V to paste | Ctrl+B to toggle sidebar | Type directly in terminal
             </div>
         </div>
     </div>
