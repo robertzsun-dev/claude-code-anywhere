@@ -759,9 +759,7 @@
         let lastOutputTime = Date.now();
         let waitingForInput = false;
         let reconnectTimer = null;
-        let reconnectAttempts = 0;
-        let maxReconnectAttempts = 10;
-        let shouldReconnect = false; // Disabled auto-reconnect - causes focus loss issues
+        let isReconnecting = false;
 
         // Register service worker for PWA
         if ('serviceWorker' in navigator) {
@@ -1441,20 +1439,18 @@
 
         // Connect to session
         function connectToSession(sessionId, isReconnect = false) {
-            // Clear any pending reconnect timer
-            if (reconnectTimer) {
-                clearTimeout(reconnectTimer);
-                reconnectTimer = null;
+            // Prevent reconnect loops
+            if (isReconnecting) {
+                console.log('[Connect] Already reconnecting, skipping');
+                return;
             }
 
             // Close existing connection
             if (ws) {
-                shouldReconnect = false; // Prevent auto-reconnect when we manually close
                 ws.close();
             }
 
             currentSession = sessionId;
-            // shouldReconnect disabled globally to prevent focus loss
 
             // Update UI
             document.querySelectorAll('.session-item').forEach(item => {
@@ -1463,17 +1459,6 @@
 
             noSession.classList.add('hidden');
             terminalContainer.classList.add('active');
-
-            if (isReconnect) {
-                const reconnectText = `Reconnecting... (${reconnectAttempts + 1}/${maxReconnectAttempts})`;
-                if (statusDot.className !== 'status-dot') {
-                    statusDot.className = 'status-dot';
-                }
-                if (statusText.textContent !== reconnectText) {
-                    statusText.textContent = reconnectText;
-                }
-                console.log('[Reconnect] Attempting to reconnect:', { attempt: reconnectAttempts + 1, sessionId });
-            }
 
             // Don't initialize terminal yet - wait for session-attached with PTY dimensions
 
@@ -1492,11 +1477,7 @@
                     statusText.textContent = 'Connected';
                 }
                 updateSessionInfo();
-
-                // Reset reconnect counter on successful connection
-                reconnectAttempts = 0;
-
-                // Note: Not sending terminal size - PTY is locked to local terminal size
+                isReconnecting = false; // Clear reconnecting flag on successful connection
             };
 
             ws.onmessage = (event) => {
@@ -1507,7 +1488,6 @@
             ws.onclose = (event) => {
                 console.log('[WebSocket] Closed', {
                     sessionId,
-                    shouldReconnect,
                     code: event.code,
                     reason: event.reason,
                     wasClean: event.wasClean
@@ -1517,10 +1497,17 @@
                 if (statusDot.className !== 'status-dot disconnected') {
                     statusDot.className = 'status-dot disconnected';
                 }
+                if (statusText.textContent !== 'Reconnecting...') {
+                    statusText.textContent = 'Reconnecting...';
+                }
 
-                // Show disconnected message (auto-reconnect disabled to prevent focus loss)
-                if (statusText.textContent !== 'Disconnected - reload page to reconnect') {
-                    statusText.textContent = 'Disconnected - reload page to reconnect';
+                // Reconnect immediately (with small delay to avoid hammering)
+                if (currentSession && !isReconnecting) {
+                    isReconnecting = true;
+                    setTimeout(() => {
+                        console.log('[WebSocket] Reconnecting to session:', currentSession);
+                        connectToSession(currentSession, true);
+                    }, 1000);
                 }
             };
 
@@ -1632,14 +1619,11 @@
                     break;
 
                 case 'exit':
-                    console.log('[Session] Session exited, disabling auto-reconnect');
-                    shouldReconnect = false; // Don't reconnect when session ends normally
+                    console.log('[Session] Session exited, preventing reconnection');
 
-                    // Clear any pending reconnect timer
-                    if (reconnectTimer) {
-                        clearTimeout(reconnectTimer);
-                        reconnectTimer = null;
-                    }
+                    // Clear current session to prevent reconnection
+                    currentSession = null;
+                    isReconnecting = false;
 
                     if (term) {
                         term.write(`\r\n\x1b[31m[Session ended with code ${message.code}]\x1b[0m\r\n`);
