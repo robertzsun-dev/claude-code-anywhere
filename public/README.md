@@ -23,12 +23,12 @@ Browser-based client for Claude Code Remote Access. No installation required!
 
 2. Open your browser:
    ```
-   http://localhost:8765
+   http://localhost:8085
    ```
 
 3. From another machine:
    ```
-   http://192.168.1.100:8765
+   http://192.168.1.100:8085
    ```
 
 ### Interface
@@ -156,7 +156,7 @@ server {
     auth_basic_user_file /etc/nginx/.htpasswd;
 
     location / {
-        proxy_pass http://localhost:8765;
+        proxy_pass http://localhost:8085;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
@@ -210,8 +210,8 @@ The code is well-commented and easy to extend:
 
 ### "Error loading sessions"
 
-- Check server is running: `curl http://localhost:8765/health`
-- Check firewall isn't blocking port 8765
+- Check server is running: `curl http://localhost:8085/health`
+- Check firewall isn't blocking port 8085
 
 ### "Connection failed"
 

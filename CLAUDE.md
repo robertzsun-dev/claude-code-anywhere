@@ -31,7 +31,7 @@ This file provides context for Claude (AI assistant) when working on this projec
 **Purpose**: Central WebSocket hub for session management
 
 **Key Features**:
-- WebSocket server on port 8765 (configurable)
+- WebSocket server on port 8085 (configurable)
 - Session storage and management
 - Message routing between wrappers and viewers
 - History buffering (10,000 lines per session)
@@ -74,7 +74,7 @@ Session {
 
 **Environment Variables**:
 - `CLAUDE_CMD`: Claude binary path (default: `claude`)
-- `CLAUDE_REMOTE_SERVER`: Server URL (default: `ws://localhost:8765`)
+- `CLAUDE_REMOTE_SERVER`: Server URL (default: `ws://localhost:8085`)
 - `CLAUDE_SEAMLESS_MODE`: Suppress wrapper messages (default: `false`)
 
 **Modes**:
@@ -303,7 +303,7 @@ GET /sessions
 1. **Use TLS**: Switch to `wss://` with valid certificates
 2. **Add Authentication**: JWT tokens, API keys, or OAuth
 3. **Use VPN**: Tunnel traffic through VPN
-4. **Firewall**: Restrict port 8765 to known IPs
+4. **Firewall**: Restrict port 8085 to known IPs
 5. **Reverse Proxy**: nginx with authentication
 6. **Rate Limiting**: Prevent abuse
 7. **Session Timeout**: Auto-close inactive sessions
@@ -322,7 +322,7 @@ server {
     auth_basic_user_file /etc/nginx/.htpasswd;
 
     location / {
-        proxy_pass http://localhost:8765;
+        proxy_pass http://localhost:8085;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
@@ -433,19 +433,19 @@ Currently only text. To add binary:
 
 ### Server won't start
 
-- Check port 8765 is available: `lsof -i:8765`
+- Check port 8085 is available: `lsof -i:8085`
 - Check Node.js version: `node --version` (needs 18+)
 - Check dependencies: `npm install`
 
 ### Wrapper can't connect
 
-- Check server is running: `curl http://localhost:8765/health`
-- Check firewall: `telnet localhost 8765`
+- Check server is running: `curl http://localhost:8085/health`
+- Check firewall: `telnet localhost 8085`
 - Check URL: `echo $CLAUDE_REMOTE_SERVER`
 
 ### Client shows no output
 
-- Check session exists: `curl http://localhost:8765/sessions`
+- Check session exists: `curl http://localhost:8085/sessions`
 - Check history: Connect and check attachment message
 - Check wrapper is sending output
 
@@ -453,7 +453,7 @@ Currently only text. To add binary:
 
 - Check shim installed: `which claude` → should show shim
 - Check original exists: `ls /opt/node22/bin/claude-original`
-- Check server running: `curl http://localhost:8765/health`
+- Check server running: `curl http://localhost:8085/health`
 - Test manually: `CLAUDE_AUTO_CONNECT=false claude`
 
 ## Future Enhancements

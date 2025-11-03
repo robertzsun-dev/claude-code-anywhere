@@ -55,7 +55,7 @@ claude
 
 Just open your browser:
 ```
-http://localhost:8765
+http://localhost:8085
 ```
 
 Click any session to view!
@@ -92,8 +92,8 @@ You should see:
 ╔════════════════════════════════════════════════════════════╗
 ║   Claude Code Remote Access Server                        ║
 ╟────────────────────────────────────────────────────────────╢
-║   WebSocket: ws://0.0.0.0:8765                            ║
-║   HTTP:      http://0.0.0.0:8765                          ║
+║   WebSocket: ws://0.0.0.0:8085                            ║
+║   HTTP:      http://0.0.0.0:8085                          ║
 ╚════════════════════════════════════════════════════════════╝
 ```
 
@@ -110,7 +110,7 @@ You'll see:
 [Wrapper] Connected to server
 [Wrapper] Session created: a1b2c3d4e5f6g7h8
 [Wrapper] To connect remotely: node client.js a1b2c3d4e5f6g7h8
-[Wrapper] Server URL: ws://localhost:8765
+[Wrapper] Server URL: ws://localhost:8085
 ```
 
 **Copy the session ID** (e.g., `a1b2c3d4e5f6g7h8`)
@@ -131,7 +131,7 @@ If connecting from a different machine:
 
 ```bash
 # Set server URL
-export CLAUDE_REMOTE_SERVER=ws://192.168.1.100:8765
+export CLAUDE_REMOTE_SERVER=ws://192.168.1.100:8085
 
 # Connect
 node client.js a1b2c3d4e5f6g7h8
@@ -159,10 +159,10 @@ npm run client
 node client.js <session-id>
 
 # Check server health
-curl http://localhost:8765/health
+curl http://localhost:8085/health
 
 # List sessions via HTTP
-curl http://localhost:8765/sessions | jq
+curl http://localhost:8085/sessions | jq
 ```
 
 ## Common Scenarios
@@ -187,7 +187,7 @@ npm run wrapper
 
 **On 192.168.1.200:**
 ```bash
-export CLAUDE_REMOTE_SERVER=ws://192.168.1.100:8765
+export CLAUDE_REMOTE_SERVER=ws://192.168.1.100:8085
 npm run client
 node client.js <session-id>
 ```
@@ -204,7 +204,7 @@ npm run wrapper
 
 **On VPN client (10.8.0.2):**
 ```bash
-export CLAUDE_REMOTE_SERVER=ws://10.8.0.1:8765
+export CLAUDE_REMOTE_SERVER=ws://10.8.0.1:8085
 node client.js <session-id>
 ```
 
@@ -216,7 +216,7 @@ node client.js <session-id>
 npm run server
 
 # In another terminal, start ngrok
-ngrok http 8765
+ngrok http 8085
 ```
 
 ngrok will give you a URL like: `https://abc123.ngrok.io`
@@ -247,17 +247,17 @@ Server isn't running or firewall is blocking:
 
 ```bash
 # Check if server is running
-curl http://localhost:8765/health
+curl http://localhost:8085/health
 
 # Check firewall (Linux)
 sudo ufw status
-sudo ufw allow 8765
+sudo ufw allow 8085
 ```
 
 ### Can't connect from remote machine
 
 1. **Check server is listening on 0.0.0.0** (not 127.0.0.1)
-2. **Firewall rules** - allow port 8765
+2. **Firewall rules** - allow port 8085
 3. **Network connectivity** - ping the server
 4. **Correct URL** - make sure using server's IP
 
@@ -299,7 +299,7 @@ For production use:
 Issues? Check:
 1. Server logs: Check terminal where server is running
 2. Wrapper logs: Check terminal where wrapper is running
-3. Network: `curl http://server-ip:8765/health`
-4. Firewall: Make sure port 8765 is open
+3. Network: `curl http://server-ip:8085/health`
+4. Firewall: Make sure port 8085 is open
 
 Still stuck? Open an issue on GitHub!

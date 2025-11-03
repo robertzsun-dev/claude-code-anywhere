@@ -143,7 +143,7 @@ Tests use different ports to avoid conflicts:
 
 - `server.test.js`: Port 8766
 - `integration.test.js`: Port 8767
-- Production: Port 8765 (default)
+- Production: Port 8085 (default)
 
 ## CI/CD Integration
 

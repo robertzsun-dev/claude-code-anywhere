@@ -11,7 +11,7 @@ import { WebSocketServer } from 'ws';
 import { createServer } from 'http';
 import crypto from 'crypto';
 
-const PORT = process.env.PORT || 8765;
+const PORT = process.env.PORT || 8085;
 const HOST = process.env.HOST || '0.0.0.0';
 
 // Session storage

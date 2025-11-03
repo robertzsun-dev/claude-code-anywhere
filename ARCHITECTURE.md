@@ -349,7 +349,7 @@ ws.on('message', handleServerMessage);
 
 # 1. Configuration
 CLAUDE_ORIGINAL="/path/to/claude-original"
-SERVER_URL="${CLAUDE_REMOTE_SERVER:-ws://localhost:8765}"
+SERVER_URL="${CLAUDE_REMOTE_SERVER:-ws://localhost:8085}"
 AUTO_CONNECT="${CLAUDE_AUTO_CONNECT:-true}"
 
 # 2. Check if auto-connect enabled
@@ -623,7 +623,7 @@ addToHistory(session, type, data) {
            │ HTTP/WS (localhost only)
            ▼
 ┌──────────────────────────────────────────┐
-│ Server (localhost:8765)                  │
+│ Server (localhost:8085)                  │
 │ - Session management                     │
 │ - Message routing                        │
 └──────────────────────────────────────────┘
@@ -705,7 +705,7 @@ addToHistory(session, type, data) {
 │         │ HTTP/WS (localhost)                           │
 │         ▼                                               │
 │  ┌─────────────┐                                        │
-│  │   Server    │ (Port 8765)                           │
+│  │   Server    │ (Port 8085)                           │
 │  │  systemd    │                                        │
 │  └──────┬──────┘                                        │
 │         │                                               │

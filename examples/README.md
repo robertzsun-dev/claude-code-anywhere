@@ -40,7 +40,7 @@ docker build -f examples/Dockerfile -t claude-remote-server .
 # Run container
 docker run -d \
   --name claude-remote \
-  -p 8765:8765 \
+  -p 8085:8085 \
   -e NODE_ENV=production \
   claude-remote-server
 
@@ -96,11 +96,11 @@ All components respect these environment variables:
 
 **Server:**
 - `HOST` - Bind address (default: `0.0.0.0`)
-- `PORT` - Port number (default: `8765`)
+- `PORT` - Port number (default: `8085`)
 - `NODE_ENV` - Environment (development/production)
 
 **Wrapper & Client:**
-- `CLAUDE_REMOTE_SERVER` - Server WebSocket URL (default: `ws://localhost:8765`)
+- `CLAUDE_REMOTE_SERVER` - Server WebSocket URL (default: `ws://localhost:8085`)
 - `CLAUDE_CMD` - Claude Code command path (default: `claude`)
 
 ## Production Deployment
@@ -128,7 +128,7 @@ server {
     ssl_certificate_key /etc/letsencrypt/live/claude.example.com/privkey.pem;
 
     location / {
-        proxy_pass http://localhost:8765;
+        proxy_pass http://localhost:8085;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
@@ -154,7 +154,7 @@ sudo certbot --nginx -d claude.example.com
 
 ```bash
 # Launch EC2 instance (Ubuntu)
-# Open port 8765 in Security Group
+# Open port 8085 in Security Group
 
 # Install Node.js
 curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
@@ -206,7 +206,7 @@ credentials-file: /home/$USER/.cloudflared/<tunnel-id>.json
 
 ingress:
   - hostname: claude.example.com
-    service: ws://localhost:8765
+    service: ws://localhost:8085
   - service: http_status:404
 EOF
 
@@ -220,10 +220,10 @@ cloudflared tunnel run claude-remote
 
 ```bash
 # Allow only from specific IP
-sudo ufw allow from 192.168.1.0/24 to any port 8765
+sudo ufw allow from 192.168.1.0/24 to any port 8085
 
 # Or allow from VPN subnet
-sudo ufw allow from 10.8.0.0/24 to any port 8765
+sudo ufw allow from 10.8.0.0/24 to any port 8085
 ```
 
 ### IP Whitelisting (nginx)
@@ -235,7 +235,7 @@ location / {
     allow 10.8.0.0/24;
     deny all;
 
-    proxy_pass http://localhost:8765;
+    proxy_pass http://localhost:8085;
     # ... rest of config
 }
 ```
@@ -264,7 +264,7 @@ app.use(limiter);
 #!/bin/bash
 # /usr/local/bin/check-claude-remote.sh
 
-if curl -sf http://localhost:8765/health > /dev/null; then
+if curl -sf http://localhost:8085/health > /dev/null; then
     exit 0
 else
     echo "Health check failed"

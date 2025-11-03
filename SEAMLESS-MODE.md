@@ -116,7 +116,7 @@ claude chat
 # → Session created
 
 # Developer 2's machine (192.168.1.200)
-export CLAUDE_REMOTE_SERVER=ws://192.168.1.100:8765
+export CLAUDE_REMOTE_SERVER=ws://192.168.1.100:8085
 npm run client
 node client.js <session-id>
 # → Both can see and interact!
@@ -143,19 +143,19 @@ No changes needed! Your IDE integration just works:
 
 ### Server URL
 
-By default, connects to `ws://localhost:8765`.
+By default, connects to `ws://localhost:8085`.
 
 To use a remote server:
 
 ```bash
 # Edit ~/.claude-remote.conf
-export CLAUDE_REMOTE_SERVER=ws://192.168.1.100:8765
+export CLAUDE_REMOTE_SERVER=ws://192.168.1.100:8085
 ```
 
 Or set for a single session:
 
 ```bash
-CLAUDE_REMOTE_SERVER=ws://192.168.1.100:8765 claude
+CLAUDE_REMOTE_SERVER=ws://192.168.1.100:8085 claude
 ```
 
 ### Disable Auto-Connect
@@ -227,7 +227,7 @@ Check if wrapper is actually being used:
 CLAUDE_SEAMLESS_MODE=false claude
 
 # Should see:
-# [Wrapper] Connecting to server: ws://localhost:8765
+# [Wrapper] Connecting to server: ws://localhost:8085
 # [Wrapper] Session created: abc123...
 ```
 
@@ -273,12 +273,12 @@ You can connect to different servers for different projects:
 ```bash
 # Project A
 cd ~/project-a
-export CLAUDE_REMOTE_SERVER=ws://server-a:8765
+export CLAUDE_REMOTE_SERVER=ws://server-a:8085
 claude
 
 # Project B
 cd ~/project-b
-export CLAUDE_REMOTE_SERVER=ws://server-b:8765
+export CLAUDE_REMOTE_SERVER=ws://server-b:8085
 claude
 ```
 
@@ -303,7 +303,7 @@ Add to your shell config (`~/.bashrc` or `~/.zshrc`):
 
 ```bash
 # Auto-start server if not running
-if ! curl -sf http://localhost:8765/health > /dev/null 2>&1; then
+if ! curl -sf http://localhost:8085/health > /dev/null 2>&1; then
     cd ~/claude-code-anywhere && nohup npm run server > /tmp/claude-server.log 2>&1 &
 fi
 ```

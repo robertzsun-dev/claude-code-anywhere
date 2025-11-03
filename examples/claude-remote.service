@@ -13,7 +13,7 @@ RestartSec=10
 # Environment
 Environment=NODE_ENV=production
 Environment=HOST=0.0.0.0
-Environment=PORT=8765
+Environment=PORT=8085
 
 # Security
 NoNewPrivileges=true

@@ -16,7 +16,7 @@ import os from 'os';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const SERVER_URL = process.env.CLAUDE_REMOTE_SERVER || 'ws://localhost:8765';
+const SERVER_URL = process.env.CLAUDE_REMOTE_SERVER || 'ws://localhost:8085';
 const SEAMLESS_MODE = process.env.CLAUDE_SEAMLESS_MODE === 'true';
 
 // Configuration

@@ -19,7 +19,7 @@ NC='\033[0m' # No Color
 
 # Check if server is running
 echo -e "${CYAN}1. Checking if server is running...${NC}"
-if curl -s http://localhost:8765/health > /dev/null 2>&1; then
+if curl -s http://localhost:8085/health > /dev/null 2>&1; then
     echo -e "${GREEN}✓ Server is running${NC}"
 else
     echo -e "${YELLOW}! Server is not running${NC}"
@@ -32,7 +32,7 @@ else
     sleep 2
 
     # Verify
-    if curl -s http://localhost:8765/health > /dev/null 2>&1; then
+    if curl -s http://localhost:8085/health > /dev/null 2>&1; then
         echo -e "${GREEN}✓ Server is healthy${NC}"
     else
         echo -e "${RED}✗ Server failed to start${NC}"
@@ -42,11 +42,11 @@ fi
 
 echo ""
 echo -e "${CYAN}2. Server status:${NC}"
-curl -s http://localhost:8765/health | jq '.' || echo "  Could not fetch status"
+curl -s http://localhost:8085/health | jq '.' || echo "  Could not fetch status"
 
 echo ""
 echo -e "${CYAN}3. Active sessions:${NC}"
-curl -s http://localhost:8765/sessions | jq '.' || echo "  Could not fetch sessions"
+curl -s http://localhost:8085/sessions | jq '.' || echo "  Could not fetch sessions"
 
 echo ""
 echo "╔════════════════════════════════════════════════════════════╗"
@@ -61,7 +61,7 @@ echo -e "  ${YELLOW}npm run client${NC}          # List sessions"
 echo -e "  ${YELLOW}node client.js <session-id>${NC}  # Connect to a session"
 echo ""
 echo -e "${GREEN}To connect from another machine:${NC}"
-echo -e "  ${YELLOW}export CLAUDE_REMOTE_SERVER=ws://$(hostname -I | awk '{print $1}'):8765${NC}"
+echo -e "  ${YELLOW}export CLAUDE_REMOTE_SERVER=ws://$(hostname -I | awk '{print $1}'):8085${NC}"
 echo -e "  ${YELLOW}node client.js <session-id>${NC}"
 echo ""
 echo -e "${CYAN}Server logs: ${NC}/tmp/claude-remote-server.log"

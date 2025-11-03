@@ -55,7 +55,7 @@ cat > /tmp/claude-wrapper << 'EOF'
 
 # Configuration (replaced by install script)
 CLAUDE_REMOTE_DIR="__CLAUDE_REMOTE_DIR__"
-SERVER_URL="${CLAUDE_REMOTE_SERVER:-ws://localhost:8765}"
+SERVER_URL="${CLAUDE_REMOTE_SERVER:-ws://localhost:8085}"
 AUTO_CONNECT="${CLAUDE_AUTO_CONNECT:-true}"
 
 # Find the original claude binary by removing /usr/local/bin from PATH
@@ -160,7 +160,7 @@ if [ ! -f "$CONFIG_FILE" ]; then
 export PATH="/usr/local/bin:\$PATH"
 
 # Server URL (change this for remote access)
-export CLAUDE_REMOTE_SERVER=ws://localhost:8765
+export CLAUDE_REMOTE_SERVER=ws://localhost:8085
 
 # Auto-connect to server (set to false to disable automatic wrapping)
 export CLAUDE_AUTO_CONNECT=true
@@ -263,7 +263,7 @@ RestartSec=10
 # Environment
 Environment=NODE_ENV=production
 Environment=HOST=0.0.0.0
-Environment=PORT=8765
+Environment=PORT=8085
 
 # Logging
 StandardOutput=journal
@@ -305,7 +305,7 @@ SERVICEEOF
             # Check status
             if systemctl is-active --quiet "$SERVICE_NAME"; then
                 echo -e "${GREEN}✓ Service started successfully${NC}"
-                echo -e "${GREEN}✓ Server is now running at ws://localhost:8765${NC}"
+                echo -e "${GREEN}✓ Server is now running at ws://localhost:8085${NC}"
             else
                 echo -e "${YELLOW}! Service may have failed to start${NC}"
                 echo -e "${YELLOW}  Check status with: sudo systemctl status $SERVICE_NAME${NC}"
@@ -349,7 +349,7 @@ if [ "$SYSTEMD_INSTALLED" = true ]; then
         echo -e "  2. Reload shell: ${YELLOW}source $CONFIG_FILE${NC}"
     fi
     echo -e "  4. Use claude normally: ${YELLOW}claude${NC}"
-    echo -e "  5. View remotely in browser: ${YELLOW}http://localhost:8765${NC}"
+    echo -e "  5. View remotely in browser: ${YELLOW}http://localhost:8085${NC}"
 else
     echo -e "  1. Start the server: ${YELLOW}cd $CLAUDE_REMOTE_DIR && npm run server${NC}"
     if [ -n "$SHELL_RC" ] && grep -q "source.*\.claude-remote\.conf" "$SHELL_RC" 2>/dev/null; then
@@ -359,7 +359,7 @@ else
         echo -e "  2. Reload shell: ${YELLOW}source $CONFIG_FILE${NC}"
     fi
     echo -e "  4. Use claude normally: ${YELLOW}claude${NC}"
-    echo -e "  5. View remotely in browser: ${YELLOW}http://localhost:8765${NC}"
+    echo -e "  5. View remotely in browser: ${YELLOW}http://localhost:8085${NC}"
 fi
 echo ""
 echo -e "${CYAN}Configuration:${NC}"

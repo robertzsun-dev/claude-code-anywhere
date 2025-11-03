@@ -9,10 +9,10 @@
 
 # Server host and port
 export CLAUDE_REMOTE_HOST=0.0.0.0
-export CLAUDE_REMOTE_PORT=8765
+export CLAUDE_REMOTE_PORT=8085
 
 # Full server URL (used by wrapper and client)
-export CLAUDE_REMOTE_SERVER=ws://localhost:8765
+export CLAUDE_REMOTE_SERVER=ws://localhost:8085
 
 # ═══════════════════════════════════════════════════════════
 # Wrapper Configuration
@@ -26,10 +26,10 @@ export CLAUDE_CMD=claude
 # ═══════════════════════════════════════════════════════════
 
 # LOCAL NETWORK (same subnet)
-# export CLAUDE_REMOTE_SERVER=ws://192.168.1.100:8765
+# export CLAUDE_REMOTE_SERVER=ws://192.168.1.100:8085
 
 # VPN NETWORK (connected via VPN)
-# export CLAUDE_REMOTE_SERVER=ws://10.8.0.1:8765
+# export CLAUDE_REMOTE_SERVER=ws://10.8.0.1:8085
 
 # INTERNET (via reverse proxy with TLS)
 # export CLAUDE_REMOTE_SERVER=wss://claude-remote.example.com
@@ -38,8 +38,8 @@ export CLAUDE_CMD=claude
 # export CLAUDE_REMOTE_SERVER=wss://abc123.ngrok.io
 
 # SSH TUNNEL (forward remote port to local)
-# ssh -L 8765:localhost:8765 user@remote-server
-# export CLAUDE_REMOTE_SERVER=ws://localhost:8765
+# ssh -L 8085:localhost:8085 user@remote-server
+# export CLAUDE_REMOTE_SERVER=ws://localhost:8085
 
 # ═══════════════════════════════════════════════════════════
 # Convenience Aliases
@@ -68,7 +68,7 @@ claude-start-all() {
     echo "Starting Claude Code Remote Access..."
 
     # Start server if not running
-    if ! curl -s http://localhost:8765/health > /dev/null 2>&1; then
+    if ! curl -s http://localhost:8085/health > /dev/null 2>&1; then
         echo "Starting server..."
         cd ~/claude-code-anywhere && npm run server > /tmp/claude-server.log 2>&1 &
         sleep 2
@@ -96,11 +96,11 @@ claude-stop() {
 # EXAMPLE 2: Remote usage (from another machine)
 # 1. On server: claude-server
 # 2. On server: claude-remote
-# 3. On client: export CLAUDE_REMOTE_SERVER=ws://192.168.1.100:8765
+# 3. On client: export CLAUDE_REMOTE_SERVER=ws://192.168.1.100:8085
 # 4. On client: claude-connect abc123
 
 # EXAMPLE 3: Internet usage (with ngrok)
-# 1. On server: ngrok http 8765
+# 1. On server: ngrok http 8085
 # 2. On server: export CLAUDE_REMOTE_SERVER=wss://abc123.ngrok.io
 # 3. On server: claude-remote
 # 4. On client: export CLAUDE_REMOTE_SERVER=wss://abc123.ngrok.io

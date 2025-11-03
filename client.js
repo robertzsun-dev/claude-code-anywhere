@@ -17,7 +17,7 @@ program
   .name('claude-remote')
   .description('Connect to a remote Claude Code session')
   .argument('[session-id]', 'Session ID to connect to (omit to list sessions)')
-  .option('-s, --server <url>', 'Server URL', process.env.CLAUDE_REMOTE_SERVER || 'ws://localhost:8765')
+  .option('-s, --server <url>', 'Server URL', process.env.CLAUDE_REMOTE_SERVER || 'ws://localhost:8085')
   .option('--list', 'List available sessions')
   .action(async (sessionId, options) => {
     if (options.list || !sessionId) {

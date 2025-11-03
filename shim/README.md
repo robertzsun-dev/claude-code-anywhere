@@ -92,7 +92,7 @@ Edit `~/.claude-remote.conf`:
 
 ```bash
 # Server URL
-export CLAUDE_REMOTE_SERVER=ws://localhost:8765
+export CLAUDE_REMOTE_SERVER=ws://localhost:8085
 
 # Auto-connect (set to false to disable wrapper)
 export CLAUDE_AUTO_CONNECT=true
@@ -148,7 +148,7 @@ No changes needed - any tool that launches `claude` will work normally.
 #!/usr/bin/env bash
 
 # 1. Check if server is running (quick TCP connection test)
-if timeout 0.5 bash -c "cat < /dev/null > /dev/tcp/localhost/8765 2>/dev/null"; then
+if timeout 0.5 bash -c "cat < /dev/null > /dev/tcp/localhost/8085 2>/dev/null"; then
     server_running=true
 fi
 
@@ -260,7 +260,7 @@ To use a remote server:
 
 ```bash
 # Edit ~/.claude-remote.conf
-export CLAUDE_REMOTE_SERVER=ws://192.168.1.100:8765
+export CLAUDE_REMOTE_SERVER=ws://192.168.1.100:8085
 
 # All claude sessions now connect to remote server
 ```
@@ -273,7 +273,7 @@ You can have different configs for different projects:
 # Project-specific config
 cd ~/my-project
 cat > .claude-remote.conf << EOF
-export CLAUDE_REMOTE_SERVER=ws://project-server:8765
+export CLAUDE_REMOTE_SERVER=ws://project-server:8085
 export CLAUDE_AUTO_CONNECT=true
 EOF
 
@@ -288,7 +288,7 @@ To see what the shim is doing:
 
 ```bash
 # Check server connectivity
-timeout 0.5 bash -c "cat < /dev/null > /dev/tcp/localhost/8765 2>/dev/null" && echo "Server running" || echo "Server not running"
+timeout 0.5 bash -c "cat < /dev/null > /dev/tcp/localhost/8085 2>/dev/null" && echo "Server running" || echo "Server not running"
 
 # Check which claude is being used
 which claude
@@ -373,11 +373,11 @@ npm run client
 npm run server
 
 # On developer machine
-export CLAUDE_REMOTE_SERVER=ws://192.168.1.100:8765
+export CLAUDE_REMOTE_SERVER=ws://192.168.1.100:8085
 claude
 
 # Teammate connects remotely
-export CLAUDE_REMOTE_SERVER=ws://192.168.1.100:8765
+export CLAUDE_REMOTE_SERVER=ws://192.168.1.100:8085
 npm run client
 node client.js <session-id>
 ```

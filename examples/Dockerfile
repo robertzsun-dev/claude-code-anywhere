@@ -26,11 +26,11 @@ COPY client.js ./
 RUN mkdir -p /var/log/claude-remote
 
 # Expose WebSocket port
-EXPOSE 8765
+EXPOSE 8085
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:8765/health || exit 1
+    CMD curl -f http://localhost:8085/health || exit 1
 
 # Run server
 CMD ["node", "server.js"]

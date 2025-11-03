@@ -6,14 +6,14 @@
 # Configuration
 CLAUDE_REMOTE_DIR="${CLAUDE_REMOTE_DIR:-$HOME/claude-code-anywhere}"
 CLAUDE_ORIGINAL="${CLAUDE_ORIGINAL:-/opt/node22/bin/claude-original}"
-SERVER_URL="${CLAUDE_REMOTE_SERVER:-ws://localhost:8765}"
+SERVER_URL="${CLAUDE_REMOTE_SERVER:-ws://localhost:8085}"
 AUTO_CONNECT="${CLAUDE_AUTO_CONNECT:-true}"
 
 # Check if server is running (only if auto-connect is enabled)
 server_running=false
 if [ "$AUTO_CONNECT" = "true" ]; then
     # Extract host and port from SERVER_URL
-    # ws://localhost:8765 -> localhost:8765
+    # ws://localhost:8085 -> localhost:8085
     server_addr=$(echo "$SERVER_URL" | sed -E 's|^wss?://||' | sed 's|/.*||')
 
     # Try to connect to server's health endpoint

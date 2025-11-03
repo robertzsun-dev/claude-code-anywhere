@@ -78,7 +78,7 @@ npm run server
 npm run wrapper
 ```
 
-The server will start on `ws://0.0.0.0:8765` by default.
+The server will start on `ws://0.0.0.0:8085` by default.
 
 This will:
 - Connect to the server
@@ -90,7 +90,7 @@ Example output:
 ```
 [Wrapper] Session created: a1b2c3d4e5f6g7h8
 [Wrapper] To connect remotely: node client.js a1b2c3d4e5f6g7h8
-[Wrapper] Server URL: ws://localhost:8765
+[Wrapper] Server URL: ws://localhost:8085
 ```
 
 ### 3. Connect Remotely
@@ -99,12 +99,12 @@ Example output:
 
 Just open your browser and visit:
 ```
-http://localhost:8765
+http://localhost:8085
 ```
 
 Or from another machine:
 ```
-http://192.168.1.100:8765
+http://192.168.1.100:8085
 ```
 
 The web interface will show all active sessions - just click one to view!
@@ -125,7 +125,7 @@ From a different machine:
 
 ```bash
 # Set the server URL
-export CLAUDE_REMOTE_SERVER=ws://192.168.1.100:8765
+export CLAUDE_REMOTE_SERVER=ws://192.168.1.100:8085
 
 # Connect
 node client.js a1b2c3d4e5f6g7h8
@@ -136,7 +136,7 @@ node client.js a1b2c3d4e5f6g7h8
 ### Server
 
 ```bash
-# Start on default port (8765)
+# Start on default port (8085)
 npm run server
 
 # Custom host/port
@@ -145,7 +145,7 @@ HOST=0.0.0.0 PORT=9000 npm run server
 
 **Environment Variables:**
 - `HOST` - Bind address (default: `0.0.0.0`)
-- `PORT` - Port number (default: `8765`)
+- `PORT` - Port number (default: `8085`)
 
 **HTTP Endpoints:**
 - `GET /health` - Server health check
@@ -162,14 +162,14 @@ node wrapper.js --help
 node wrapper.js chat
 
 # Connect to a different server
-CLAUDE_REMOTE_SERVER=ws://192.168.1.100:8765 npm run wrapper
+CLAUDE_REMOTE_SERVER=ws://192.168.1.100:8085 npm run wrapper
 
 # Use a different Claude Code command
 CLAUDE_CMD=/usr/local/bin/claude npm run wrapper
 ```
 
 **Environment Variables:**
-- `CLAUDE_REMOTE_SERVER` - Server WebSocket URL (default: `ws://localhost:8765`)
+- `CLAUDE_REMOTE_SERVER` - Server WebSocket URL (default: `ws://localhost:8085`)
 - `CLAUDE_CMD` - Claude Code command (default: `claude`)
 
 ### Client
@@ -182,7 +182,7 @@ npm run client
 node client.js <session-id>
 
 # Connect to a different server
-node client.js <session-id> --server ws://192.168.1.100:8765
+node client.js <session-id> --server ws://192.168.1.100:8085
 ```
 
 **Keyboard Shortcuts (in client UI):**
@@ -199,7 +199,7 @@ If you're on a VPN or local network:
 
 1. Start the server on a machine accessible to all clients
 2. Note the server's IP address (e.g., `192.168.1.100`)
-3. Set `CLAUDE_REMOTE_SERVER=ws://192.168.1.100:8765` on wrapper and client machines
+3. Set `CLAUDE_REMOTE_SERVER=ws://192.168.1.100:8085` on wrapper and client machines
 
 ### Internet Access (Cloud/Tunnel)
 
@@ -216,7 +216,7 @@ server {
     ssl_certificate_key /path/to/key.pem;
 
     location / {
-        proxy_pass http://localhost:8765;
+        proxy_pass http://localhost:8085;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
@@ -233,8 +233,8 @@ Then use: `CLAUDE_REMOTE_SERVER=wss://claude-remote.example.com`
 On the client machine:
 
 ```bash
-# Forward local port 8765 to remote server
-ssh -L 8765:localhost:8765 user@remote-server
+# Forward local port 8085 to remote server
+ssh -L 8085:localhost:8085 user@remote-server
 
 # Then connect normally
 node client.js <session-id>
@@ -244,7 +244,7 @@ node client.js <session-id>
 
 ```bash
 # Using ngrok
-ngrok http 8765
+ngrok http 8085
 
 # Then use the provided URL
 CLAUDE_REMOTE_SERVER=wss://abc123.ngrok.io npm run wrapper
@@ -313,7 +313,7 @@ Run `npm install` to install dependencies.
 
 Make sure the server is running and accessible. Check:
 - Server is started (`npm run server`)
-- Firewall allows port 8765
+- Firewall allows port 8085
 - Server URL is correct
 
 ### Terminal size issues
