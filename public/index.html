@@ -152,17 +152,14 @@
 
         #terminal {
             /* Let xterm.js control dimensions based on cols/rows */
-            display: inline-block;
-            white-space: nowrap;
         }
 
         #terminal .xterm-viewport {
-            overflow-y: scroll !important;
-            overflow-x: hidden !important;
+            overflow: hidden !important;
         }
 
-        #terminal .xterm-screen {
-            width: auto !important;
+        #terminal .xterm-screen canvas {
+            display: block;
         }
 
         #terminal-container.active {
