@@ -424,33 +424,53 @@ async function handleStartSession(req, res) {
         tmuxArgs.push('-x', cols.toString(), '-y', rows.toString());
       }
 
-      // The command to run inside tmux: node wrapper.js
-      tmuxArgs.push(
-        'env',
-        `CLAUDE_CMD=${claudeCmd}`,
-        'CLAUDE_SEAMLESS_MODE=true',
-        `CLAUDE_REMOTE_SERVER=ws://${HOST}:${PORT}`,
-        `CLAUDE_COLS=${cols || 80}`,
-        `CLAUDE_ROWS=${rows || 24}`,
-        'node',
-        wrapperPath
-      );
+      // The command to run inside tmux: bash script that logs and runs wrapper
+      // We use a shell script to capture any errors
+      const logFile = `/tmp/claude-session-${sessionId}.log`;
+      const shellCommand = `exec > ${logFile} 2>&1; echo "Starting wrapper at $(date)"; echo "PATH=$PATH"; echo "Node: $(which node)"; echo "Wrapper: ${wrapperPath}"; CLAUDE_CMD=${claudeCmd} CLAUDE_SEAMLESS_MODE=true CLAUDE_REMOTE_SERVER=ws://${HOST}:${PORT} CLAUDE_COLS=${cols || 80} CLAUDE_ROWS=${rows || 24} node ${wrapperPath}; echo "Wrapper exited with code $? at $(date)"`;
+
+      tmuxArgs.push('/bin/bash', '-c', shellCommand);
+
+      console.log(`[Session] Running: tmux ${tmuxArgs.join(' ')}`);
 
       const tmuxCmd = spawn('tmux', tmuxArgs);
+
+      // Capture output from tmux command (for debugging)
+      let tmuxOutput = '';
+      let tmuxError = '';
+
+      if (tmuxCmd.stdout) {
+        tmuxCmd.stdout.on('data', (data) => {
+          tmuxOutput += data.toString();
+        });
+      }
+
+      if (tmuxCmd.stderr) {
+        tmuxCmd.stderr.on('data', (data) => {
+          tmuxError += data.toString();
+        });
+      }
 
       await new Promise((resolve, reject) => {
         tmuxCmd.on('close', (code) => {
           if (code === 0) {
             resolve();
           } else {
+            console.error(`[Session] tmux failed with code ${code}`);
+            if (tmuxOutput) console.error(`[Session] tmux stdout: ${tmuxOutput}`);
+            if (tmuxError) console.error(`[Session] tmux stderr: ${tmuxError}`);
             reject(new Error(`tmux failed with code ${code}`));
           }
         });
 
-        tmuxCmd.on('error', reject);
+        tmuxCmd.on('error', (err) => {
+          console.error(`[Session] tmux error:`, err);
+          reject(err);
+        });
       });
 
       console.log(`[Session] Created tmux session ${tmuxSessionName} in ${resolvedPath} (running wrapper inside tmux)`);
+      console.log(`[Session] Logs: ${logFile}`);
 
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
@@ -458,7 +478,8 @@ async function handleStartSession(req, res) {
         sessionId: 'pending',  // Session ID will be assigned by wrapper when it connects
         tmuxSession: tmuxSessionName,
         workingDir: resolvedPath,
-        message: `Session starting in ${resolvedPath}. Attach with: tmux attach -t ${tmuxSessionName}`
+        logFile: logFile,
+        message: `Session starting in ${resolvedPath}. Attach with: tmux attach -t ${tmuxSessionName}\nLogs: ${logFile}`
       }));
 
     } catch (err) {
