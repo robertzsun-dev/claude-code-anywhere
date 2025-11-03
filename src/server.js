@@ -450,7 +450,10 @@ async function handleStartSession(req, res) {
       // Use -l flag to make bash a login shell, which sources .profile/.bashrc
       // This ensures all environment variables (HOME, USER, etc.) are set
       // Add node bin directory to PATH so claude's shebang (#!/usr/bin/env node) works
-      const shellCommand = `export PATH="${nodeBinDir}:$PATH"; CLAUDE_CMD=${claudeCmd} CLAUDE_SEAMLESS_MODE=true CLAUDE_REMOTE_SERVER=ws://${HOST}:${PORT} CLAUDE_COLS=${cols || 80} CLAUDE_ROWS=${rows || 24} exec ${nodePath} ${wrapperPath}`;
+      const wsProtocol = USE_HTTPS ? 'wss' : 'ws';
+      // Allow self-signed certificates for wss:// connections
+      const tlsReject = USE_HTTPS ? 'NODE_TLS_REJECT_UNAUTHORIZED=0 ' : '';
+      const shellCommand = `export PATH="${nodeBinDir}:$PATH"; ${tlsReject}CLAUDE_CMD=${claudeCmd} CLAUDE_SEAMLESS_MODE=true CLAUDE_REMOTE_SERVER=${wsProtocol}://${HOST}:${PORT} CLAUDE_COLS=${cols || 80} CLAUDE_ROWS=${rows || 24} exec ${nodePath} ${wrapperPath}`;
 
       tmuxArgs.push('/bin/bash', '-l', '-c', shellCommand);
 
