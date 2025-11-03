@@ -115,10 +115,9 @@ function handleServerMessage(message) {
       break;
 
     case 'resize':
-      // Terminal resize from remote client
-      if (terminal && message.cols && message.rows) {
-        terminal.resize(message.cols, message.rows);
-      }
+      // Ignore resize from remote clients to prevent PTY size conflicts
+      // The PTY size is locked to the local terminal size
+      // Remote viewers should adapt their display, not change the PTY
       break;
 
     case 'server-shutdown':

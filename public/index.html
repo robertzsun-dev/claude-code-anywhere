@@ -318,11 +318,11 @@
         // Sidebar toggle
         function toggleSidebar() {
             sidebar.classList.toggle('hidden');
-            // Resize terminal when sidebar toggles
+            // Resize terminal display when sidebar toggles
             setTimeout(() => {
                 if (term && fitAddon) {
                     fitAddon.fit();
-                    sendTerminalSize();
+                    // Note: Not sending resize to avoid PTY size conflicts
                 }
             }, 350); // Wait for animation to complete
         }
@@ -391,11 +391,12 @@
                 }
             });
 
-            // Handle resize
+            // Handle resize - fit terminal to window but don't send to server
+            // The PTY size is locked to the local terminal to prevent conflicts
             window.addEventListener('resize', () => {
                 if (fitAddon) {
                     fitAddon.fit();
-                    sendTerminalSize();
+                    // Note: Not sending resize to server to prevent PTY size conflicts
                 }
             });
         }
@@ -490,8 +491,7 @@
                 statusText.textContent = 'Connected';
                 updateSessionInfo();
 
-                // Send initial terminal size
-                setTimeout(sendTerminalSize, 100);
+                // Note: Not sending terminal size - PTY is locked to local terminal size
             };
 
             ws.onmessage = (event) => {
