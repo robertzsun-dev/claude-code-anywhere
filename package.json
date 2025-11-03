@@ -6,7 +6,12 @@
   "scripts": {
     "server": "node server.js",
     "client": "node client.js",
-    "wrapper": "node wrapper.js"
+    "wrapper": "node wrapper.js",
+    "test": "node --test tests/**/*.test.js",
+    "test:watch": "node --test --watch tests/**/*.test.js",
+    "test:server": "node --test tests/server.test.js",
+    "test:wrapper": "node --test tests/wrapper.test.js",
+    "test:integration": "node --test tests/integration.test.js"
   },
   "dependencies": {
     "ws": "^8.18.0",
