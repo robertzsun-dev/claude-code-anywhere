@@ -1279,6 +1279,19 @@
             term.loadAddon(new WebLinksAddon.WebLinksAddon());
             term.open(document.getElementById('terminal'));
 
+            // Force iOS momentum scrolling on DOM-rendered viewport
+            setTimeout(() => {
+                const viewport = document.querySelector('#terminal .xterm-viewport');
+                if (viewport) {
+                    viewport.style.cssText = `
+                        overflow-y: scroll !important;
+                        overflow-x: hidden !important;
+                        -webkit-overflow-scrolling: touch !important;
+                        overscroll-behavior: none !important;
+                    `;
+                }
+            }, 100);
+
             // Debug: log terminal dimensions after opening
             console.log('Terminal initialized:', {
                 cols: term.cols,
