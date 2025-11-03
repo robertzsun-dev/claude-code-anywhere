@@ -1860,12 +1860,15 @@
                         charHeight = 20;
                     }
 
-                    // Get available space - use full viewport for better mobile support
-                    // Account for UI chrome (header, padding, margins)
+                    // Get available space - account for sidebar on desktop
                     const headerHeight = 60; // Approximate header height
                     const padding = 40; // UI padding/margins
 
-                    const availableWidth = window.innerWidth - padding;
+                    // Use terminal container width if available (accounts for sidebar on desktop)
+                    const terminalContainer = document.getElementById('terminal-container');
+                    const availableWidth = terminalContainer && terminalContainer.offsetWidth > 0
+                        ? terminalContainer.offsetWidth - padding
+                        : window.innerWidth - padding;
                     const availableHeight = window.innerHeight - headerHeight - padding;
 
                     cols = Math.floor(availableWidth / charWidth);
