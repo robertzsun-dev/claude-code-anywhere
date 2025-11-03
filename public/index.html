@@ -1564,6 +1564,9 @@
 
                         // Check if history ends with a prompt pattern
                         detectWaitingForInput('', true); // Pass empty string but trigger check on existing buffer
+
+                        // Scroll to bottom after loading history
+                        term.scrollToBottom();
                     }
                     updateSessionInfo(message.metadata);
                     break;
