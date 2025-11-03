@@ -1039,7 +1039,7 @@
 
                 closeFileBrowser();
 
-                alert(`Session starting in ${result.workingDir}!\n\nThe session will appear in the list shortly.`);
+                alert(`Session created in ${result.workingDir}!\n\nTmux session: ${result.tmuxSession}\nAttach with: tmux attach -t ${result.tmuxSession}\n\nThe session will appear in the web interface shortly.`);
 
                 // Reload sessions list immediately and then poll frequently for the new session
                 loadSessions();

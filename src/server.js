@@ -388,37 +388,77 @@ async function handleStartSession(req, res) {
 
       // Generate session ID
       const sessionId = crypto.randomBytes(8).toString('hex');
+      const tmuxSessionName = `claude-${sessionId}`;
 
-      // Spawn wrapper.js directly - it will spawn Claude in the specified directory
+      // Check if tmux is available
+      const tmuxCheck = spawn('which', ['tmux']);
+      let tmuxAvailable = false;
+
+      await new Promise((resolve) => {
+        tmuxCheck.on('close', (code) => {
+          tmuxAvailable = code === 0;
+          resolve();
+        });
+      });
+
+      if (!tmuxAvailable) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'tmux is not installed' }));
+        return;
+      }
+
+      // Spawn wrapper.js inside a tmux session
+      // This way the session runs in tmux (can be attached to) but wrapper works normally
       const wrapperPath = new URL('./wrapper.js', import.meta.url).pathname;
       const claudeCmd = command || 'claude';
 
-      const wrapperProcess = spawn('node', [wrapperPath], {
-        cwd: resolvedPath,
-        detached: true,
-        stdio: 'ignore',
-        env: {
-          ...process.env,
-          CLAUDE_CMD: claudeCmd,
-          CLAUDE_SEAMLESS_MODE: 'true',
-          CLAUDE_REMOTE_SERVER: `ws://${HOST}:${PORT}`,
-          // Pass terminal dimensions via environment for wrapper to use
-          CLAUDE_COLS: cols ? cols.toString() : '80',
-          CLAUDE_ROWS: rows ? rows.toString() : '24'
-        }
+      const tmuxArgs = [
+        'new-session',
+        '-d',  // Detached
+        '-s', tmuxSessionName,  // Session name
+        '-c', resolvedPath,  // Working directory
+      ];
+
+      // Set terminal dimensions if provided
+      if (cols && rows) {
+        tmuxArgs.push('-x', cols.toString(), '-y', rows.toString());
+      }
+
+      // The command to run inside tmux: node wrapper.js
+      tmuxArgs.push(
+        'env',
+        `CLAUDE_CMD=${claudeCmd}`,
+        'CLAUDE_SEAMLESS_MODE=true',
+        `CLAUDE_REMOTE_SERVER=ws://${HOST}:${PORT}`,
+        `CLAUDE_COLS=${cols || 80}`,
+        `CLAUDE_ROWS=${rows || 24}`,
+        'node',
+        wrapperPath
+      );
+
+      const tmuxCmd = spawn('tmux', tmuxArgs);
+
+      await new Promise((resolve, reject) => {
+        tmuxCmd.on('close', (code) => {
+          if (code === 0) {
+            resolve();
+          } else {
+            reject(new Error(`tmux failed with code ${code}`));
+          }
+        });
+
+        tmuxCmd.on('error', reject);
       });
 
-      // Detach the wrapper process so it runs independently
-      wrapperProcess.unref();
-
-      console.log(`[Session] Spawned wrapper in ${resolvedPath} (session will be created by wrapper)`);
+      console.log(`[Session] Created tmux session ${tmuxSessionName} in ${resolvedPath} (running wrapper inside tmux)`);
 
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         success: true,
         sessionId: 'pending',  // Session ID will be assigned by wrapper when it connects
+        tmuxSession: tmuxSessionName,
         workingDir: resolvedPath,
-        message: `Session starting in ${resolvedPath}. It will appear in the list momentarily.`
+        message: `Session starting in ${resolvedPath}. Attach with: tmux attach -t ${tmuxSessionName}`
       }));
 
     } catch (err) {
