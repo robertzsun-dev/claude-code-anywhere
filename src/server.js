@@ -426,8 +426,10 @@ async function handleStartSession(req, res) {
 
       // The command to run inside tmux: bash script that logs and runs wrapper
       // We use a shell script to capture any errors
+      // Use process.execPath to get the full path to the node binary
+      const nodePath = process.execPath;
       const logFile = `/tmp/claude-session-${sessionId}.log`;
-      const shellCommand = `exec > ${logFile} 2>&1; echo "Starting wrapper at $(date)"; echo "PATH=$PATH"; echo "Node: $(which node)"; echo "Wrapper: ${wrapperPath}"; CLAUDE_CMD=${claudeCmd} CLAUDE_SEAMLESS_MODE=true CLAUDE_REMOTE_SERVER=ws://${HOST}:${PORT} CLAUDE_COLS=${cols || 80} CLAUDE_ROWS=${rows || 24} node ${wrapperPath}; echo "Wrapper exited with code $? at $(date)"`;
+      const shellCommand = `exec > ${logFile} 2>&1; echo "Starting wrapper at $(date)"; echo "PATH=$PATH"; echo "Node: ${nodePath}"; echo "Wrapper: ${wrapperPath}"; CLAUDE_CMD=${claudeCmd} CLAUDE_SEAMLESS_MODE=true CLAUDE_REMOTE_SERVER=ws://${HOST}:${PORT} CLAUDE_COLS=${cols || 80} CLAUDE_ROWS=${rows || 24} ${nodePath} ${wrapperPath}; echo "Wrapper exited with code $? at $(date)"`;
 
       tmuxArgs.push('/bin/bash', '-c', shellCommand);
 
