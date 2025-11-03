@@ -415,7 +415,10 @@ async function handleStartSession(req, res) {
       // Claude is usually in the same directory as node (when installed via npm global)
       const nodePath = process.execPath;
       const nodeBinDir = dirname(nodePath);
-      const claudeCmd = command || join(nodeBinDir, 'claude');
+
+      // Always use full path to claude (ignore the command parameter for now)
+      // This ensures it works with nvm and other non-standard installations
+      const claudeCmd = join(nodeBinDir, 'claude');
 
       const tmuxArgs = [
         'new-session',
