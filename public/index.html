@@ -1016,23 +1016,51 @@
                     cols = term.cols;
                     rows = term.rows;
                 } else {
-                    // Calculate dimensions based on viewport size
-                    // Assume monospace font with ~9px char width and ~17px line height
+                    // Create a temporary terminal to measure actual character dimensions
+                    const tempTerm = new Terminal({
+                        fontSize: 14,
+                        fontFamily: 'Menlo, Monaco, "Courier New", monospace'
+                    });
+
+                    const tempContainer = document.createElement('div');
+                    tempContainer.style.position = 'absolute';
+                    tempContainer.style.visibility = 'hidden';
+                    document.body.appendChild(tempContainer);
+
+                    tempTerm.open(tempContainer);
+
+                    // Get the actual rendered dimensions
+                    const charMeasure = tempTerm._core._renderService.dimensions;
+                    const charWidth = charMeasure.actualCellWidth;
+                    const charHeight = charMeasure.actualCellHeight;
+
+                    // Get available space
                     const terminalArea = document.getElementById('terminal-container');
-                    if (terminalArea) {
-                        const width = terminalArea.clientWidth || window.innerWidth * 0.7;
-                        const height = terminalArea.clientHeight || window.innerHeight * 0.8;
-                        cols = Math.floor(width / 9);
-                        rows = Math.floor(height / 17);
+                    let availableWidth, availableHeight;
+
+                    if (terminalArea && terminalArea.clientWidth > 0) {
+                        availableWidth = terminalArea.clientWidth - 20; // padding
+                        availableHeight = terminalArea.clientHeight - 20;
                     } else {
-                        // Fallback: use window dimensions
-                        cols = Math.floor(window.innerWidth * 0.7 / 9);
-                        rows = Math.floor(window.innerHeight * 0.8 / 17);
+                        // Use viewport as fallback
+                        availableWidth = window.innerWidth * 0.7;
+                        availableHeight = window.innerHeight - 200; // header/footer space
                     }
+
+                    cols = Math.floor(availableWidth / charWidth);
+                    rows = Math.floor(availableHeight / charHeight);
+
+                    // Clean up
+                    tempTerm.dispose();
+                    document.body.removeChild(tempContainer);
+
                     // Clamp to reasonable values
                     cols = Math.max(80, Math.min(cols, 300));
                     rows = Math.max(24, Math.min(rows, 100));
-                    console.log('Calculated terminal dimensions for new session:', { cols, rows });
+                    console.log('Calculated terminal dimensions for new session:', {
+                        cols, rows, charWidth, charHeight,
+                        availableWidth, availableHeight
+                    });
                 }
 
                 const response = await fetch('/start-session', {
