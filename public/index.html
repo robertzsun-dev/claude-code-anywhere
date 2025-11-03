@@ -517,12 +517,32 @@
             });
 
             // Force terminal to not shrink - set min-width based on cols
-            // Approximate: 9px per character for Monaco 14px
-            const minWidth = (cols || 80) * 9;
+            // Character width for Monaco 14px is approximately 8.4px
+            // Add some padding for safety
+            const charWidth = 8.4;
+            const minWidth = Math.ceil((cols || 80) * charWidth);
+
             if (term.element) {
                 term.element.style.minWidth = `${minWidth}px`;
-                term.element.style.width = 'max-content';
-                console.log('Set terminal min-width:', minWidth);
+                term.element.style.width = `${minWidth}px`;
+
+                // Also set on viewport and screen
+                const viewport = term.element.querySelector('.xterm-viewport');
+                const screen = term.element.querySelector('.xterm-screen');
+
+                if (viewport) {
+                    viewport.style.width = `${minWidth}px`;
+                }
+                if (screen) {
+                    screen.style.width = `${minWidth}px`;
+                }
+
+                console.log('Set terminal width:', {
+                    minWidth,
+                    elementWidth: term.element.offsetWidth,
+                    elementScrollWidth: term.element.scrollWidth,
+                    containerWidth: document.getElementById('terminal-container').offsetWidth
+                });
             }
 
             // Handle terminal input
@@ -685,10 +705,24 @@
                             term.resize(message.data.cols, message.data.rows);
 
                             // Update element width after resize
-                            const minWidth = message.data.cols * 9;
+                            const charWidth = 8.4;
+                            const minWidth = Math.ceil(message.data.cols * charWidth);
+
                             if (term.element) {
                                 term.element.style.minWidth = `${minWidth}px`;
-                                term.element.style.width = 'max-content';
+                                term.element.style.width = `${minWidth}px`;
+
+                                const viewport = term.element.querySelector('.xterm-viewport');
+                                const screen = term.element.querySelector('.xterm-screen');
+
+                                if (viewport) {
+                                    viewport.style.width = `${minWidth}px`;
+                                }
+                                if (screen) {
+                                    screen.style.width = `${minWidth}px`;
+                                }
+
+                                console.log('Updated terminal width after resize:', minWidth);
                             }
                         }
                     }
