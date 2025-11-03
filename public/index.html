@@ -113,33 +113,6 @@
             display: block;
         }
 
-        #input-area {
-            padding: 1rem;
-            background: #2d2d30;
-            border-top: 1px solid #3e3e42;
-            display: none;
-            gap: 0.5rem;
-        }
-
-        #input-area.active {
-            display: flex;
-        }
-
-        #input-box {
-            flex: 1;
-            padding: 0.5rem;
-            background: #3c3c3c;
-            border: 1px solid #3e3e42;
-            color: #d4d4d4;
-            font-family: 'Monaco', 'Courier New', monospace;
-            font-size: 14px;
-        }
-
-        #input-box:focus {
-            outline: none;
-            border-color: #007acc;
-        }
-
         button {
             padding: 0.5rem 1rem;
             background: #0e639c;
@@ -270,13 +243,7 @@
             </div>
 
             <div class="keyboard-hints">
-                Press Ctrl+Shift+V to paste | Ctrl+B to toggle sidebar | Terminal captures input automatically
-            </div>
-
-            <div id="input-area">
-                <input type="text" id="input-box" placeholder="Type input and press Enter to send...">
-                <button id="send-btn">Send (Enter)</button>
-                <button id="clear-btn">Clear</button>
+                Press Ctrl+Shift+V to paste | Ctrl+B to toggle sidebar | Type directly in terminal
             </div>
         </div>
     </div>
@@ -306,10 +273,6 @@
         const loading = document.getElementById('loading');
         const noSession = document.getElementById('no-session');
         const terminalContainer = document.getElementById('terminal-container');
-        const inputArea = document.getElementById('input-area');
-        const inputBox = document.getElementById('input-box');
-        const sendBtn = document.getElementById('send-btn');
-        const clearBtn = document.getElementById('clear-btn');
         const statusDot = document.getElementById('status-dot');
         const statusText = document.getElementById('status-text');
         const sessionInfo = document.getElementById('session-info');
@@ -475,7 +438,6 @@
 
             noSession.classList.add('hidden');
             terminalContainer.classList.add('active');
-            inputArea.classList.add('active');
 
             // Initialize terminal
             initTerminal();
@@ -563,39 +525,8 @@
             sessionStats.textContent = `${meta.user || 'unknown'}@${meta.hostname || 'unknown'}`;
         }
 
-        // Send input from input box
-        function sendInput() {
-            const input = inputBox.value;
-            if (!input || !ws || ws.readyState !== WebSocket.OPEN) {
-                return;
-            }
-
-            ws.send(JSON.stringify({
-                type: 'input',
-                data: input + '\r'
-            }));
-
-            inputBox.value = '';
-            term.focus();
-        }
-
-        // Clear terminal
-        function clearTerminal() {
-            if (term) {
-                term.clear();
-            }
-        }
-
-        // Event listeners
-        sendBtn.addEventListener('click', sendInput);
-        clearBtn.addEventListener('click', clearTerminal);
-
-        inputBox.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                sendInput();
-            }
-        });
+        // Terminal input is handled directly by xterm.js
+        // No need for separate input box
 
         // Auto-refresh session list
         setInterval(loadSessions, 10000); // Refresh every 10 seconds
