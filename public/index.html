@@ -291,7 +291,7 @@
             overflow: auto;
             position: relative;
             -webkit-overflow-scrolling: touch;
-            touch-action: pan-y;
+            touch-action: pan-x pan-y;
             min-width: 0;
         }
 
@@ -301,7 +301,7 @@
 
         #terminal .xterm-viewport {
             overflow-y: auto !important;
-            overflow-x: hidden !important;
+            overflow-x: auto !important;
             -webkit-overflow-scrolling: touch !important;
         }
 
