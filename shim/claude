@@ -6,27 +6,32 @@
 # Configuration
 CLAUDE_REMOTE_DIR="${CLAUDE_REMOTE_DIR:-$HOME/claude-code-anywhere}"
 CLAUDE_ORIGINAL="${CLAUDE_ORIGINAL:-/opt/node22/bin/claude-original}"
-SERVER_URL="${CLAUDE_REMOTE_SERVER:-ws://localhost:8085}"
 AUTO_CONNECT="${CLAUDE_AUTO_CONNECT:-true}"
 
-# Check if server is running (only if auto-connect is enabled)
+# Detect if server is running and whether it's using HTTPS
 server_running=false
+detected_protocol="ws"
 if [ "$AUTO_CONNECT" = "true" ]; then
-    # Extract host and port from SERVER_URL
-    # ws://localhost:8085 -> localhost:8085
-    server_addr=$(echo "$SERVER_URL" | sed -E 's|^wss?://||' | sed 's|/.*||')
-
-    # Try to connect to server's health endpoint
-    if timeout 1 bash -c "cat < /dev/null > /dev/tcp/${server_addr/:// } 2>/dev/null"; then
+    # Try HTTPS first (wss://)
+    if timeout 0.5 bash -c 'curl -k -s https://localhost:8085/health > /dev/null 2>&1'; then
         server_running=true
+        detected_protocol="wss"
+    # Fall back to HTTP (ws://)
+    elif timeout 0.5 bash -c 'curl -s http://localhost:8085/health > /dev/null 2>&1'; then
+        server_running=true
+        detected_protocol="ws"
     fi
 fi
+
+# Use detected protocol or environment variable
+SERVER_URL="${CLAUDE_REMOTE_SERVER:-${detected_protocol}://localhost:8085}"
 
 # If server is running and we have node wrapper, use it
 if [ "$server_running" = "true" ] && [ -f "$CLAUDE_REMOTE_DIR/src/wrapper.js" ]; then
     # Run through the wrapper to enable remote access
     export CLAUDE_CMD="$CLAUDE_ORIGINAL"
     export CLAUDE_REMOTE_SERVER="$SERVER_URL"
+    export CLAUDE_SEAMLESS_MODE="true"
     exec node "$CLAUDE_REMOTE_DIR/src/wrapper.js" "$@"
 else
     # Server not running or auto-connect disabled, run original claude directly

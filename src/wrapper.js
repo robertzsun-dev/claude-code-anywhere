@@ -10,13 +10,18 @@
 import pty from 'node-pty';
 import { WebSocket } from 'ws';
 import { fileURLToPath } from 'url';
-import { dirname } from 'path';
+import { dirname, join } from 'path';
+import { existsSync } from 'fs';
 import os from 'os';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const SERVER_URL = process.env.CLAUDE_REMOTE_SERVER || 'ws://localhost:8085';
+// Auto-detect protocol based on cert files
+const projectRoot = join(__dirname, '..');
+const USE_HTTPS = existsSync(join(projectRoot, 'cert.pem')) && existsSync(join(projectRoot, 'key.pem'));
+const DEFAULT_PROTOCOL = USE_HTTPS ? 'wss' : 'ws';
+const SERVER_URL = process.env.CLAUDE_REMOTE_SERVER || `${DEFAULT_PROTOCOL}://localhost:8085`;
 const SEAMLESS_MODE = process.env.CLAUDE_SEAMLESS_MODE === 'true';
 
 // Parse command line arguments
@@ -75,7 +80,12 @@ function connectToServer() {
   return new Promise((resolve, reject) => {
     log(`[Wrapper] Connecting to server: ${SERVER_URL} (${config.cols}x${config.rows})`);
 
-    ws = new WebSocket(`${SERVER_URL}?role=wrapper&cols=${config.cols}&rows=${config.rows}`);
+    // WebSocket options - allow self-signed certificates for wss://
+    const wsOptions = USE_HTTPS ? {
+      rejectUnauthorized: false
+    } : {};
+
+    ws = new WebSocket(`${SERVER_URL}?role=wrapper&cols=${config.cols}&rows=${config.rows}`, wsOptions);
 
     ws.on('open', () => {
       log('[Wrapper] Connected to server');
