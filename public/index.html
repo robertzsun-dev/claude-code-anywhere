@@ -304,6 +304,16 @@
             -webkit-overflow-scrolling: touch !important;
         }
 
+        /* Hide scrollbars but keep scrolling functionality */
+        #terminal .xterm-viewport::-webkit-scrollbar {
+            display: none;
+        }
+
+        #terminal .xterm-viewport {
+            scrollbar-width: none; /* Firefox */
+            -ms-overflow-style: none; /* IE/Edge */
+        }
+
         #terminal .xterm-screen canvas {
             display: block;
         }
