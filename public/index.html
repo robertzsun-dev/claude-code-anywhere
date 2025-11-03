@@ -666,12 +666,16 @@
                     break;
 
                 case 'metadata':
-                    // Reinitialize terminal if dimensions changed
+                    // Resize terminal if dimensions changed
                     if (message.data && message.data.cols && message.data.rows && term) {
                         const currentCols = term.cols;
                         const currentRows = term.rows;
                         if (currentCols !== message.data.cols || currentRows !== message.data.rows) {
-                            initTerminal(message.data.cols, message.data.rows);
+                            console.log('Resizing terminal:', {
+                                from: { cols: currentCols, rows: currentRows },
+                                to: { cols: message.data.cols, rows: message.data.rows }
+                            });
+                            term.resize(message.data.cols, message.data.rows);
                         }
                     }
                     updateSessionInfo(message.data);

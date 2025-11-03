@@ -190,6 +190,38 @@ function startClaudeCode() {
       terminal.write(data);
     });
   }
+
+  // Handle local terminal resize
+  process.stdout.on('resize', () => {
+    const newCols = process.stdout.columns || 80;
+    const newRows = process.stdout.rows || 24;
+
+    log(`[Wrapper] Local terminal resized to ${newCols}x${newRows}`);
+
+    // Resize the PTY
+    if (terminal) {
+      terminal.resize(newCols, newRows);
+    }
+
+    // Update config
+    config.cols = newCols;
+    config.rows = newRows;
+
+    // Send new dimensions to server
+    sendToServer({
+      type: 'metadata',
+      data: {
+        cwd: config.cwd,
+        command: config.command,
+        args: config.args,
+        hostname: os.hostname(),
+        platform: os.platform(),
+        user: os.userInfo().username,
+        cols: newCols,
+        rows: newRows
+      }
+    });
+  });
 }
 
 // Handle signals
