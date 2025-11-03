@@ -439,15 +439,17 @@
             }
         });
 
-        // Initialize xterm.js
-        function initTerminal() {
+        // Initialize xterm.js with specific dimensions from PTY
+        function initTerminal(cols, rows) {
             if (term) {
                 term.dispose();
             }
 
-            // Don't specify cols/rows - let terminal use natural PTY dimensions
-            // This allows horizontal scrolling on small screens
+            // Create terminal with exact PTY dimensions
+            // This ensures proper character alignment and enables horizontal scrolling
             term = new Terminal({
+                cols: cols || 80,
+                rows: rows || 24,
                 cursorBlink: true,
                 fontSize: 14,
                 fontFamily: 'Monaco, Courier New, monospace',
@@ -491,9 +493,6 @@
                     }));
                 }
             });
-
-            // No resize handler needed - terminal maintains PTY's natural size
-            // Horizontal scrolling handles overflow on small screens
         }
 
         // Send terminal size to server
@@ -571,8 +570,7 @@
             noSession.classList.add('hidden');
             terminalContainer.classList.add('active');
 
-            // Initialize terminal
-            initTerminal();
+            // Don't initialize terminal yet - wait for session-attached with PTY dimensions
 
             // Connect WebSocket
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -608,9 +606,12 @@
         function handleMessage(message) {
             switch (message.type) {
                 case 'session-attached':
-                    // Resize terminal to match PTY dimensions
+                    // Initialize terminal with PTY dimensions
                     if (message.metadata && message.metadata.cols && message.metadata.rows) {
-                        term.resize(message.metadata.cols, message.metadata.rows);
+                        initTerminal(message.metadata.cols, message.metadata.rows);
+                    } else {
+                        // Fallback to default dimensions if not provided
+                        initTerminal(80, 24);
                     }
 
                     // Display history
@@ -625,27 +626,39 @@
                     break;
 
                 case 'output':
-                    term.write(message.data);
+                    if (term) {
+                        term.write(message.data);
+                    }
                     break;
 
                 case 'metadata':
-                    // Resize terminal if dimensions changed
-                    if (message.data && message.data.cols && message.data.rows) {
-                        term.resize(message.data.cols, message.data.rows);
+                    // Reinitialize terminal if dimensions changed
+                    if (message.data && message.data.cols && message.data.rows && term) {
+                        const currentCols = term.cols;
+                        const currentRows = term.rows;
+                        if (currentCols !== message.data.cols || currentRows !== message.data.rows) {
+                            initTerminal(message.data.cols, message.data.rows);
+                        }
                     }
                     updateSessionInfo(message.data);
                     break;
 
                 case 'exit':
-                    term.write(`\r\n\x1b[31m[Session ended with code ${message.code}]\x1b[0m\r\n`);
+                    if (term) {
+                        term.write(`\r\n\x1b[31m[Session ended with code ${message.code}]\x1b[0m\r\n`);
+                    }
                     break;
 
                 case 'wrapper-disconnected':
-                    term.write('\r\n\x1b[33m[Wrapper disconnected - waiting for reconnection...]\x1b[0m\r\n');
+                    if (term) {
+                        term.write('\r\n\x1b[33m[Wrapper disconnected - waiting for reconnection...]\x1b[0m\r\n');
+                    }
                     break;
 
                 case 'error':
-                    term.write(`\r\n\x1b[31m[Error: ${message.error}]\x1b[0m\r\n`);
+                    if (term) {
+                        term.write(`\r\n\x1b[31m[Error: ${message.error}]\x1b[0m\r\n`);
+                    }
                     break;
             }
         }
