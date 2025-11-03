@@ -1497,10 +1497,12 @@
                 if (statusDot.className !== 'status-dot disconnected') {
                     statusDot.className = 'status-dot disconnected';
                 }
-                if (statusText.textContent !== 'Reconnecting...') {
-                    statusText.textContent = 'Reconnecting...';
+                if (statusText.textContent !== 'Disconnected - reload to reconnect') {
+                    statusText.textContent = 'Disconnected - reload to reconnect';
                 }
 
+                // RECONNECTION DISABLED - testing if this is the cause of terminal refresh
+                /*
                 // Reconnect immediately (with small delay to avoid hammering)
                 if (currentSession && !isReconnecting) {
                     isReconnecting = true;
@@ -1509,6 +1511,7 @@
                         connectToSession(currentSession, true);
                     }, 1000);
                 }
+                */
             };
 
             ws.onerror = (error) => {
