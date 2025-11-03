@@ -1465,8 +1465,13 @@
             terminalContainer.classList.add('active');
 
             if (isReconnect) {
-                statusDot.className = 'status-dot';
-                statusText.textContent = `Reconnecting... (${reconnectAttempts + 1}/${maxReconnectAttempts})`;
+                const reconnectText = `Reconnecting... (${reconnectAttempts + 1}/${maxReconnectAttempts})`;
+                if (statusDot.className !== 'status-dot') {
+                    statusDot.className = 'status-dot';
+                }
+                if (statusText.textContent !== reconnectText) {
+                    statusText.textContent = reconnectText;
+                }
                 console.log('[Reconnect] Attempting to reconnect:', { attempt: reconnectAttempts + 1, sessionId });
             }
 
@@ -1480,8 +1485,12 @@
 
             ws.onopen = () => {
                 console.log('[WebSocket] Connected', { sessionId, isReconnect });
-                statusDot.className = 'status-dot connected';
-                statusText.textContent = 'Connected';
+                if (statusDot.className !== 'status-dot connected') {
+                    statusDot.className = 'status-dot connected';
+                }
+                if (statusText.textContent !== 'Connected') {
+                    statusText.textContent = 'Connected';
+                }
                 updateSessionInfo();
 
                 // Reset reconnect counter on successful connection
@@ -1504,26 +1513,37 @@
                     wasClean: event.wasClean
                 });
 
-                statusDot.className = 'status-dot disconnected';
+                // Only update status if it's actually changing to prevent focus loss
+                if (statusDot.className !== 'status-dot disconnected') {
+                    statusDot.className = 'status-dot disconnected';
+                }
 
                 // Auto-reconnect if enabled and we haven't exceeded max attempts
                 if (shouldReconnect && reconnectAttempts < maxReconnectAttempts) {
                     const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 10000); // Exponential backoff, max 10s
-                    statusText.textContent = `Reconnecting in ${Math.ceil(delay/1000)}s...`;
+
+                    // Only update status text if it's different to prevent focus loss
+                    if (statusText.textContent !== 'Reconnecting...') {
+                        statusText.textContent = 'Reconnecting...';
+                    }
 
                     reconnectTimer = setTimeout(() => {
                         reconnectAttempts++;
                         connectToSession(currentSession, true);
                     }, delay);
                 } else if (reconnectAttempts >= maxReconnectAttempts) {
-                    statusText.textContent = 'Connection failed - tap to retry';
-                    statusText.style.cursor = 'pointer';
-                    statusText.onclick = () => {
-                        reconnectAttempts = 0;
-                        connectToSession(currentSession, true);
-                    };
+                    if (statusText.textContent !== 'Connection failed - tap to retry') {
+                        statusText.textContent = 'Connection failed - tap to retry';
+                        statusText.style.cursor = 'pointer';
+                        statusText.onclick = () => {
+                            reconnectAttempts = 0;
+                            connectToSession(currentSession, true);
+                        };
+                    }
                 } else {
-                    statusText.textContent = 'Disconnected';
+                    if (statusText.textContent !== 'Disconnected') {
+                        statusText.textContent = 'Disconnected';
+                    }
                 }
             };
 
@@ -1647,9 +1667,13 @@
                     if (term) {
                         term.write(`\r\n\x1b[31m[Session ended with code ${message.code}]\x1b[0m\r\n`);
                     }
-                    // Update status
-                    statusDot.className = 'status-dot disconnected';
-                    statusText.textContent = 'Session ended';
+                    // Update status (only if changed to prevent focus loss)
+                    if (statusDot.className !== 'status-dot disconnected') {
+                        statusDot.className = 'status-dot disconnected';
+                    }
+                    if (statusText.textContent !== 'Session ended') {
+                        statusText.textContent = 'Session ended';
+                    }
                     break;
 
                 case 'wrapper-disconnected':
@@ -1885,9 +1909,8 @@
         // Add event listener for Start New Session button
         document.getElementById('start-session-btn').addEventListener('click', openFileBrowser);
 
-        // Disable auto-refresh to prevent focus loss
-        // User can manually refresh if needed
-        // TODO: Find a way to auto-refresh without causing focus loss
+        // Auto-refresh session list (only updates ages/active state, no DOM rebuild)
+        setInterval(loadSessions, 10000);
 
         // Initial load
         loadSessions();
