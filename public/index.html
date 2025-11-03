@@ -73,7 +73,8 @@
         }
 
         #install-btn,
-        #notification-toggle {
+        #notification-toggle,
+        #debug-btn {
             background: transparent;
             border: 1px solid rgba(255, 255, 255, 0.1);
             color: #fafafa;
@@ -89,14 +90,16 @@
         }
 
         #install-btn:hover,
-        #notification-toggle:hover {
+        #notification-toggle:hover,
+        #debug-btn:hover {
             background: rgba(255, 255, 255, 0.05);
             border-color: rgba(255, 255, 255, 0.2);
             transform: scale(1.05);
         }
 
         #install-btn:active,
-        #notification-toggle:active {
+        #notification-toggle:active,
+        #debug-btn:active {
             transform: scale(0.95);
         }
 
@@ -706,6 +709,9 @@
             <button id="notification-toggle" title="Enable notifications" onclick="requestNotificationPermission()">
                 🔔
             </button>
+            <button id="debug-btn" title="Debug notifications" onclick="showDebugPanel()" style="display: flex;">
+                🐛
+            </button>
             <div id="session-info"></div>
         </div>
     </div>
@@ -837,6 +843,99 @@
             }
             if (installModal) {
                 installModal.classList.remove('visible');
+            }
+        }
+
+        // Debug panel functions
+        function updateDebugInfo() {
+            const debugInfo = document.getElementById('debug-info');
+            if (!debugInfo) return;
+
+            const info = [];
+            info.push(`📱 Browser: ${navigator.userAgent.substr(0, 50)}...`);
+            info.push(`🔧 iOS: ${isIOS()}`);
+            info.push(`🏠 Standalone: ${isStandalone()}`);
+            info.push(`🔔 Notification API: ${'Notification' in window ? 'Available' : 'NOT Available'}`);
+
+            if ('Notification' in window) {
+                info.push(`🔑 Permission: ${Notification.permission}`);
+            }
+
+            info.push(`💾 LocalStorage: ${localStorage.getItem('notificationsEnabled') || 'not set'}`);
+            info.push(`✅ Enabled: ${notificationsEnabled}`);
+
+            debugInfo.innerHTML = info.join('<br>');
+        }
+
+        function showDebugPanel() {
+            const debugModal = document.getElementById('debug-modal');
+            if (debugModal) {
+                updateDebugInfo();
+                debugModal.classList.add('visible');
+            }
+        }
+
+        function closeDebugPanel() {
+            const debugModal = document.getElementById('debug-modal');
+            if (debugModal) {
+                debugModal.classList.remove('visible');
+            }
+        }
+
+        async function testNotificationRequest() {
+            console.log('=== Testing Notification Request ===');
+            updateDebugInfo();
+
+            if (!('Notification' in window)) {
+                alert('❌ Notification API not available');
+                return;
+            }
+
+            console.log('Current permission:', Notification.permission);
+
+            try {
+                const permission = await Notification.requestPermission();
+                console.log('Permission result:', permission);
+                alert(`✅ Permission result: ${permission}`);
+                updateDebugInfo();
+            } catch (error) {
+                console.error('Error:', error);
+                alert(`❌ Error: ${error.message}`);
+            }
+        }
+
+        function testShowNotification() {
+            console.log('=== Testing Show Notification ===');
+            updateDebugInfo();
+
+            if (!('Notification' in window)) {
+                alert('❌ Notification API not available');
+                return;
+            }
+
+            if (Notification.permission !== 'granted') {
+                alert(`❌ Permission is "${Notification.permission}"\nRequest permission first!`);
+                return;
+            }
+
+            try {
+                const notification = new Notification('🎉 Test Notification', {
+                    body: 'If you can see this, notifications are working!',
+                    icon: '/icon-192.png',
+                    badge: '/icon-192.png',
+                    tag: 'test',
+                    requireInteraction: false
+                });
+
+                notification.onclick = () => {
+                    console.log('Notification clicked!');
+                    notification.close();
+                };
+
+                alert('✅ Notification created!\nCheck if it appeared.');
+            } catch (error) {
+                console.error('Error:', error);
+                alert(`❌ Error: ${error.message}`);
             }
         }
 
@@ -1596,6 +1695,23 @@
             </div>
 
             <button class="install-modal-close" onclick="closeInstallModal()">Got it!</button>
+        </div>
+    </div>
+
+    <!-- Debug Panel Modal -->
+    <div id="debug-modal" class="install-modal">
+        <div class="install-modal-content" style="max-width: 500px;">
+            <h3>🐛 Notification Debug</h3>
+            <div style="text-align: left; font-size: 0.875rem; line-height: 1.6; margin: 1.5rem 0;">
+                <div style="background: rgba(255, 255, 255, 0.03); padding: 1rem; border-radius: 8px; margin-bottom: 1rem; font-family: monospace;">
+                    <div id="debug-info">Loading...</div>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                    <button class="btn btn-primary" onclick="testNotificationRequest()">1. Request Permission</button>
+                    <button class="btn btn-primary" onclick="testShowNotification()">2. Show Test Notification</button>
+                    <button class="btn btn-secondary" onclick="closeDebugPanel()">Close</button>
+                </div>
+            </div>
         </div>
     </div>
 </body>
