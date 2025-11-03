@@ -410,7 +410,12 @@ async function handleStartSession(req, res) {
       // Spawn wrapper.js inside a tmux session
       // This way the session runs in tmux (can be attached to) but wrapper works normally
       const wrapperPath = new URL('./wrapper.js', import.meta.url).pathname;
-      const claudeCmd = command || 'claude';
+
+      // Get full paths to node and claude binaries
+      // Claude is usually in the same directory as node (when installed via npm global)
+      const nodePath = process.execPath;
+      const nodeBinDir = dirname(nodePath);
+      const claudeCmd = command || join(nodeBinDir, 'claude');
 
       const tmuxArgs = [
         'new-session',
@@ -426,10 +431,8 @@ async function handleStartSession(req, res) {
 
       // The command to run inside tmux: bash script that logs and runs wrapper
       // We use a shell script to capture any errors
-      // Use process.execPath to get the full path to the node binary
-      const nodePath = process.execPath;
       const logFile = `/tmp/claude-session-${sessionId}.log`;
-      const shellCommand = `exec > ${logFile} 2>&1; echo "Starting wrapper at $(date)"; echo "PATH=$PATH"; echo "Node: ${nodePath}"; echo "Wrapper: ${wrapperPath}"; CLAUDE_CMD=${claudeCmd} CLAUDE_SEAMLESS_MODE=true CLAUDE_REMOTE_SERVER=ws://${HOST}:${PORT} CLAUDE_COLS=${cols || 80} CLAUDE_ROWS=${rows || 24} ${nodePath} ${wrapperPath}; echo "Wrapper exited with code $? at $(date)"`;
+      const shellCommand = `exec > ${logFile} 2>&1; echo "Starting wrapper at $(date)"; echo "PATH=$PATH"; echo "Node: ${nodePath}"; echo "Claude: ${claudeCmd}"; echo "Wrapper: ${wrapperPath}"; CLAUDE_CMD=${claudeCmd} CLAUDE_SEAMLESS_MODE=true CLAUDE_REMOTE_SERVER=ws://${HOST}:${PORT} CLAUDE_COLS=${cols || 80} CLAUDE_ROWS=${rows || 24} ${nodePath} ${wrapperPath}; echo "Wrapper exited with code $? at $(date)"`;
 
       tmuxArgs.push('/bin/bash', '-c', shellCommand);
 
