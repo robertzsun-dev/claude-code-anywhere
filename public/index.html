@@ -939,6 +939,16 @@
             }
         }
 
+        function resetNotificationState() {
+            if (confirm('⚠️ This will reset notification settings.\n\nAfter clicking OK:\n1. Delete this app from your home screen\n2. Open Settings → Safari → Clear History and Website Data\n3. Restart your iPhone\n4. Reinstall the app\n5. Try notifications again\n\nClear local settings now?')) {
+                localStorage.removeItem('notificationsEnabled');
+                notificationsEnabled = false;
+                updateNotificationButton();
+                updateDebugInfo();
+                alert('✅ Local settings cleared!\n\nNow follow the steps:\n1. Delete app from home screen\n2. Settings → Safari → Clear History\n3. Restart iPhone\n4. Reinstall app from Safari');
+            }
+        }
+
         // Initialize install button after DOM loads
         window.addEventListener('DOMContentLoaded', () => {
             installBtn = document.getElementById('install-btn');
@@ -1709,6 +1719,7 @@
                 <div style="display: flex; flex-direction: column; gap: 0.5rem;">
                     <button class="btn btn-primary" onclick="testNotificationRequest()">1. Request Permission</button>
                     <button class="btn btn-primary" onclick="testShowNotification()">2. Show Test Notification</button>
+                    <button class="btn btn-secondary" onclick="resetNotificationState()" style="background: #dc2626; border-color: #dc2626;">🔄 Reset & Force Retry</button>
                     <button class="btn btn-secondary" onclick="closeDebugPanel()">Close</button>
                 </div>
             </div>

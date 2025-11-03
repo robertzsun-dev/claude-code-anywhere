@@ -9,14 +9,21 @@
 
 import { WebSocketServer } from 'ws';
 import { createServer } from 'http';
+import { createServer as createHttpsServer } from 'https';
+import { readFileSync, existsSync } from 'fs';
 import crypto from 'crypto';
 import { spawn } from 'child_process';
 import { readdir, stat } from 'fs/promises';
 import { join, resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import os from 'os';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 const PORT = process.env.PORT || 8085;
 const HOST = process.env.HOST || '0.0.0.0';
+const USE_HTTPS = process.env.HTTPS === 'true' || existsSync(join(__dirname, '..', 'cert.pem'));
 
 // Session storage
 const sessions = new Map();
@@ -504,8 +511,34 @@ async function handleStartSession(req, res) {
   });
 }
 
-// Create HTTP server for WebSocket
-const httpServer = createServer((req, res) => {
+// Create HTTP/HTTPS server for WebSocket
+let httpServer;
+if (USE_HTTPS) {
+  const certPath = join(__dirname, '..', 'cert.pem');
+  const keyPath = join(__dirname, '..', 'key.pem');
+
+  if (existsSync(certPath) && existsSync(keyPath)) {
+    const options = {
+      cert: readFileSync(certPath),
+      key: readFileSync(keyPath)
+    };
+    httpServer = createHttpsServer(options, (req, res) => {
+      handleHttpRequest(req, res);
+    });
+    console.log('🔒 HTTPS enabled (certificates found)');
+  } else {
+    console.warn('⚠️  HTTPS requested but certificates not found, falling back to HTTP');
+    httpServer = createServer((req, res) => {
+      handleHttpRequest(req, res);
+    });
+  }
+} else {
+  httpServer = createServer((req, res) => {
+    handleHttpRequest(req, res);
+  });
+}
+
+function handleHttpRequest(req, res) {
   // Serve web client
   if (req.url === '/' || req.url === '/index.html') {
     import('fs').then(fs => {
@@ -553,7 +586,7 @@ const httpServer = createServer((req, res) => {
     res.writeHead(404);
     res.end('Not found');
   }
-});
+}
 
 // Create WebSocket server
 const wss = new WebSocketServer({ server: httpServer });
@@ -561,12 +594,16 @@ wss.on('connection', handleConnection);
 
 // Start server
 httpServer.listen(PORT, HOST, () => {
+  const wsProtocol = USE_HTTPS ? 'wss' : 'ws';
+  const httpProtocol = USE_HTTPS ? 'https' : 'http';
+  const secureIcon = USE_HTTPS ? '🔒 ' : '';
+
   console.log(`
 ╔════════════════════════════════════════════════════════════╗
-║   Claude Code Remote Access Server                        ║
+║   ${secureIcon}Claude Code Remote Access Server                        ║
 ╟────────────────────────────────────────────────────────────╢
-║   WebSocket: ws://${HOST}:${PORT}                    ║
-║   HTTP:      http://${HOST}:${PORT}                  ║
+║   WebSocket: ${wsProtocol}://${HOST}:${PORT}                    ║
+║   HTTP:      ${httpProtocol}://${HOST}:${PORT}                  ║
 ╟────────────────────────────────────────────────────────────╢
 ║   Endpoints:                                               ║
 ║   - GET /health    Server health check                     ║
