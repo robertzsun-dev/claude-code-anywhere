@@ -75,8 +75,8 @@ claude
 # → Automatically wrapped, session appears in server!
 
 # Terminal 3: Connect remotely
-npm run client
-node client.js <session-id>
+Open http://localhost:8085 in browser
+Open http://localhost:8085 in browser
 ```
 
 **When server is NOT running:**
@@ -168,7 +168,7 @@ fi
 When launched through the shim, the wrapper runs in "seamless mode":
 - No wrapper status messages shown
 - Only Claude Code's actual output is displayed
-- Session ID logged to server (visible in `npm run client`)
+- Session ID logged to server (visible in `Open http://localhost:8085 in browser`)
 - Completely transparent to the user
 
 ### Performance
@@ -363,7 +363,7 @@ npm run server
 claude
 
 # Connect from another terminal
-npm run client
+Open http://localhost:8085 in browser
 ```
 
 ### Example 2: Remote Team Collaboration
@@ -378,8 +378,8 @@ claude
 
 # Teammate connects remotely
 export CLAUDE_REMOTE_SERVER=ws://192.168.1.100:8085
-npm run client
-node client.js <session-id>
+Open http://localhost:8085 in browser
+Open http://localhost:8085 in browser
 ```
 
 ### Example 3: Selective Enabling

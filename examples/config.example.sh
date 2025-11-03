@@ -60,7 +60,7 @@ claude-connect() {
         echo "Usage: claude-connect <session-id>"
         return 1
     fi
-    cd ~/claude-code-anywhere && node src/client.js "$1"
+    echo "Open http://localhost:8085 in your browser to view sessions"
 }
 
 # Quick start everything

@@ -17,10 +17,10 @@ This file provides context for Claude (AI assistant) when working on this projec
 
 ```
 ┌─────────────────┐         ┌─────────────────┐         ┌─────────────────┐
-│  Wrapper        │◄───────►│ Session Server  │◄───────►│ Remote Client   │
-│  (wrapper.js)   │ WebSkt  │   (server.js)   │ WebSkt  │  (client.js)    │
+│  Wrapper        │◄───────►│ Session Server  │◄───────►│  Web Client     │
+│  (wrapper.js)   │ WebSkt  │   (server.js)   │ WebSkt  │ (index.html)    │
 │                 │         │                 │         │                 │
-│  - Spawns PTY   │         │ - Manages I/O   │         │ - Terminal UI   │
+│  - Spawns PTY   │         │ - Manages I/O   │         │ - Browser UI    │
 │  - Captures I/O │         │ - Multiplexes   │         │ - Send input    │
 │  - Streams data │         │ - Routes msgs   │         │ - View output   │
 └─────────────────┘         └─────────────────┘         └─────────────────┘
@@ -81,29 +81,29 @@ Session {
 - **Normal**: Shows wrapper status messages
 - **Seamless**: Silent, only shows Claude Code output (for shim)
 
-### 3. Client (`client.js`)
+### 3. Web Client (`public/index.html`)
 
-**Purpose**: Remote terminal UI for viewing/controlling sessions
+**Purpose**: Browser-based UI for viewing/controlling sessions
 
 **Key Features**:
-- Blessed TUI (terminal user interface)
+- Full browser-based terminal emulation
 - Session listing and selection
-- Real-time output display
-- Input dialog (Ctrl+I)
+- Real-time output display with xterm.js
+- Interactive input
 - Scrollback support (10,000 lines)
-- Keyboard shortcuts
+- Responsive design (desktop/tablet/mobile)
 
 **UI Components**:
-- Status bar (session info)
-- Terminal output area (blessed.log)
-- Hint bar (keyboard shortcuts)
-- Input dialog (blessed.textbox)
+- Session selector
+- Terminal display area (xterm.js)
+- Input controls
+- Auto-reconnect on connection loss
 
-**Keyboard Shortcuts**:
-- `Ctrl+I`: Send input
-- `Ctrl+L`: Clear terminal
-- `Ctrl+C`: Disconnect
-- `Mouse`: Scroll output
+**Interactions**:
+- Click session to connect
+- Type in terminal to send input
+- Scroll to view history
+- Auto-refresh session list
 
 ### 4. Seamless Wrapper (`shim/`)
 
@@ -177,7 +177,7 @@ Session {
 claude-code-anywhere/
 ├── server.js                  - WebSocket session server
 ├── wrapper.js                 - PTY wrapper for Claude Code
-├── client.js                  - Remote client with TUI
+├── public/index.html          - Web-based client UI
 ├── package.json              - Dependencies and scripts
 ├── package-lock.json         - Lockfile
 │
@@ -215,9 +215,6 @@ claude-code-anywhere/
 
 - **ws** (^8.18.0): WebSocket server and client
 - **node-pty** (^1.0.0): PTY (pseudo-terminal) spawning
-- **blessed** (^0.1.81): Terminal UI framework
-- **commander** (^12.0.0): CLI argument parsing
-- **chalk** (^5.3.0): Terminal colors
 
 ### Development
 
@@ -342,7 +339,7 @@ npm run server
 npm run wrapper
 
 # Terminal 3: Client (view session)
-npm run client
+# View sessions at http://localhost:8085
 ```
 
 ### Testing
@@ -377,7 +374,7 @@ node --inspect client.js <session-id>
 ### Adding a New Message Type
 
 1. Update server message handlers
-2. Update wrapper/client senders
+2. Update wrapper/web client senders
 3. Add to protocol documentation
 4. Write tests
 
@@ -392,7 +389,7 @@ maxHistory: 10000  // Change this
 
 1. Add auth middleware to server
 2. Update wrapper to send credentials
-3. Update client to prompt for credentials
+3. Update web client to prompt for credentials
 4. Add token refresh logic
 
 ### Supporting Binary Data
@@ -460,7 +457,7 @@ Currently only text. To add binary:
 
 ### Planned Features
 
-- [ ] Web-based client (browser UI)
+- [x] Web-based client (browser UI)
 - [ ] Session recording/playback
 - [ ] Session persistence (survive server restart)
 - [ ] Multi-server federation
@@ -515,7 +512,7 @@ Technical details...
 
 - [WebSocket Protocol](https://datatracker.ietf.org/doc/html/rfc6455)
 - [node-pty API](https://github.com/microsoft/node-pty)
-- [blessed Documentation](https://github.com/chjj/blessed)
+- [xterm.js](https://xtermjs.org/) - Terminal emulator for web
 - [systemd Service Files](https://www.freedesktop.org/software/systemd/man/systemd.service.html)
 
 ### Similar Projects

@@ -55,17 +55,15 @@ npm run wrapper
 # Now use Claude normally - output appears locally AND remotely
 ```
 
-**3. Connect from another terminal/machine:**
+**3. Connect from web browser:**
 
-Option A - **Terminal client**:
-```bash
-npm run client              # Lists active sessions
-node src/client.js <session-id>   # Connect to specific session
-```
-
-Option B - **Web browser**:
 ```
 http://localhost:8085
+```
+
+Or from another machine:
+```
+http://192.168.1.100:8085
 ```
 
 That's it! Your Claude session is now accessible remotely.
@@ -197,27 +195,6 @@ npm run wrapper -- --help
 - `CLAUDE_CMD` - Claude binary path (default: `claude`)
 - `CLAUDE_SEAMLESS_MODE` - Silent mode (default: `false`)
 
-### Client (Terminal UI)
-
-Connect to a session:
-
-```bash
-# List sessions
-npm run client
-
-# Connect to specific session
-node src/client.js <session-id>
-
-# Custom server
-node src/client.js <session-id> --server ws://192.168.1.100:8085
-```
-
-**Keyboard Controls**:
-- `Ctrl+I`: Send input
-- `Ctrl+L`: Clear screen
-- `Ctrl+C`: Disconnect
-- `Mouse`: Scroll history
-
 ## Remote Access
 
 ### Local Network (LAN)
@@ -237,14 +214,9 @@ npm run server
 ```
 
 3. **Connect from another machine:**
-```bash
-# Set server URL on client machine
-export CLAUDE_REMOTE_SERVER=ws://192.168.1.100:8085
 
-# Connect
-node src/client.js <session-id>
-
-# Or use web browser
+Open web browser:
+```
 http://192.168.1.100:8085
 ```
 
@@ -292,8 +264,7 @@ See `examples/nginx.conf` for nginx configuration with TLS and authentication.
 claude-code-anywhere/
 ├── src/
 │   ├── server.js           # WebSocket session server
-│   ├── wrapper.js          # PTY wrapper for Claude Code
-│   └── client.js           # Terminal UI client
+│   └── wrapper.js          # PTY wrapper for Claude Code
 │
 ├── shim/                   # Seamless mode wrapper
 │   ├── claude              # Shim script template
@@ -485,7 +456,6 @@ npm run test:watch
 
 ```bash
 npm run server        # Start server
-npm run client        # List sessions
 npm run wrapper       # Start wrapper
 npm test              # Run tests
 ```
