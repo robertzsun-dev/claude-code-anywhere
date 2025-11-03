@@ -1370,17 +1370,23 @@
 
         // Render session list
         function renderSessions() {
+            // Preserve focus state before updating DOM
+            const activeElement = document.activeElement;
+            const hadFocus = activeElement && (activeElement.closest('.xterm') || activeElement.classList.contains('xterm'));
+
             if (sessions.length === 0) {
                 sessionList.innerHTML = '<div style="padding: 1rem; color: #858585;">No active sessions</div>';
                 return;
             }
 
-            sessionList.innerHTML = sessions.map(session => {
+            // Generate new HTML
+            const newHTML = sessions.map(session => {
                 const age = Math.floor((Date.now() - new Date(session.created).getTime()) / 1000);
                 const ageStr = age < 60 ? `${age}s` : `${Math.floor(age / 60)}m`;
+                const isActive = session.id === currentSession ? 'active' : '';
 
                 return `
-                    <div class="session-item" data-session-id="${session.id}">
+                    <div class="session-item ${isActive}" data-session-id="${session.id}">
                         <div class="session-id">${session.id}</div>
                         <div class="session-meta">
                             ${session.metadata.hostname || 'Unknown host'}<br>
@@ -1391,13 +1397,26 @@
                 `;
             }).join('');
 
-            // Add click handlers
-            document.querySelectorAll('.session-item').forEach(item => {
-                item.addEventListener('click', () => {
-                    const sessionId = item.dataset.sessionId;
-                    connectToSession(sessionId);
+            // Only update if HTML changed (prevents unnecessary DOM manipulation)
+            if (sessionList.innerHTML !== newHTML) {
+                sessionList.innerHTML = newHTML;
+
+                // Add click handlers
+                document.querySelectorAll('.session-item').forEach(item => {
+                    item.addEventListener('click', () => {
+                        const sessionId = item.dataset.sessionId;
+                        connectToSession(sessionId);
+                    });
                 });
-            });
+            }
+
+            // Restore focus to terminal if it was focused before
+            if (hadFocus && term) {
+                // Use requestAnimationFrame to ensure DOM is updated
+                requestAnimationFrame(() => {
+                    term.focus();
+                });
+            }
         }
 
         // Connect to session
