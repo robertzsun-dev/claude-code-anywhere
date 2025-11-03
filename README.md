@@ -17,13 +17,14 @@ Remote access system for Claude Code sessions. Connect to any running Claude Cod
 
 ## Features
 
+- **Web-Based Client**: No installation needed - just open your browser!
 - **Seamless Integration**: Install once, use `claude` normally - automatic remote access!
 - **Remote Session Access**: Connect to Claude Code sessions from any device
 - **Real-time Streaming**: See Claude Code output in real-time (10,000 line buffer)
 - **Bidirectional Control**: Send input to remote sessions
 - **Multiple Viewers**: Multiple clients can watch the same session
 - **Session Management**: List and attach to active sessions
-- **Terminal UI**: Beautiful blessed-based terminal interface
+- **Dual Client Options**: Web browser OR terminal client
 - **IDE Compatible**: Works with VSCode, JetBrains, and all IDE integrations
 - **Cross-platform**: Works on Linux, macOS, and Windows
 
@@ -94,6 +95,22 @@ Example output:
 
 ### 3. Connect Remotely
 
+**Option A: Web Browser (Easiest - No Installation Required!)**
+
+Just open your browser and visit:
+```
+http://localhost:8765
+```
+
+Or from another machine:
+```
+http://192.168.1.100:8765
+```
+
+The web interface will show all active sessions - just click one to view!
+
+**Option B: Terminal Client (Advanced)**
+
 From anywhere on your network:
 
 ```bash
@@ -104,7 +121,7 @@ npm run client
 node client.js a1b2c3d4e5f6g7h8
 ```
 
-You can also connect from a different machine:
+From a different machine:
 
 ```bash
 # Set the server URL

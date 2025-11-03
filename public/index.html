@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Claude Code Remote Access</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #header {
+            background: #2d2d30;
+            padding: 1rem;
+            border-bottom: 1px solid #3e3e42;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        #header h1 {
+            font-size: 1.2rem;
+            font-weight: 500;
+        }
+
+        #session-info {
+            font-size: 0.9rem;
+            color: #858585;
+        }
+
+        #main {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+
+        #sidebar {
+            width: 300px;
+            background: #252526;
+            border-right: 1px solid #3e3e42;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+
+        #sidebar h2 {
+            padding: 1rem;
+            font-size: 1rem;
+            font-weight: 500;
+            border-bottom: 1px solid #3e3e42;
+        }
+
+        .session-item {
+            padding: 1rem;
+            border-bottom: 1px solid #3e3e42;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .session-item:hover {
+            background: #2a2d2e;
+        }
+
+        .session-item.active {
+            background: #094771;
+        }
+
+        .session-id {
+            font-family: 'Monaco', 'Courier New', monospace;
+            font-size: 0.9rem;
+            color: #4ec9b0;
+            margin-bottom: 0.5rem;
+        }
+
+        .session-meta {
+            font-size: 0.8rem;
+            color: #858585;
+        }
+
+        #content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #terminal-container {
+            flex: 1;
+            padding: 1rem;
+            overflow-y: auto;
+            font-family: 'Monaco', 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 1.5;
+            background: #1e1e1e;
+        }
+
+        #terminal-output {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        #input-area {
+            padding: 1rem;
+            background: #2d2d30;
+            border-top: 1px solid #3e3e42;
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        #input-box {
+            flex: 1;
+            padding: 0.5rem;
+            background: #3c3c3c;
+            border: 1px solid #3e3e42;
+            color: #d4d4d4;
+            font-family: 'Monaco', 'Courier New', monospace;
+            font-size: 14px;
+        }
+
+        #input-box:focus {
+            outline: none;
+            border-color: #007acc;
+        }
+
+        button {
+            padding: 0.5rem 1rem;
+            background: #0e639c;
+            border: none;
+            color: white;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+
+        button:hover {
+            background: #1177bb;
+        }
+
+        button:disabled {
+            background: #3e3e42;
+            cursor: not-allowed;
+        }
+
+        #status-bar {
+            background: #007acc;
+            color: white;
+            padding: 0.4rem 1rem;
+            font-size: 0.85rem;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .status-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 0.5rem;
+        }
+
+        .status-dot.connected {
+            background: #4ec9b0;
+        }
+
+        .status-dot.disconnected {
+            background: #f48771;
+        }
+
+        #no-session {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            height: 100%;
+            color: #858585;
+        }
+
+        #no-session h2 {
+            margin-bottom: 1rem;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        #loading {
+            text-align: center;
+            padding: 2rem;
+            color: #858585;
+        }
+    </style>
+</head>
+<body>
+    <div id="header">
+        <h1>Claude Code Remote Access</h1>
+        <div id="session-info"></div>
+    </div>
+
+    <div id="main">
+        <div id="sidebar">
+            <h2>Active Sessions</h2>
+            <div id="loading">Loading sessions...</div>
+            <div id="session-list"></div>
+        </div>
+
+        <div id="content">
+            <div id="no-session">
+                <h2>No Session Selected</h2>
+                <p>Select a session from the sidebar to view</p>
+            </div>
+
+            <div id="terminal-container" class="hidden">
+                <div id="terminal-output"></div>
+            </div>
+
+            <div id="input-area" class="hidden">
+                <input type="text" id="input-box" placeholder="Type command and press Enter...">
+                <button id="send-btn">Send</button>
+                <button id="clear-btn">Clear</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="status-bar">
+        <div>
+            <span class="status-dot disconnected" id="status-dot"></span>
+            <span id="status-text">Disconnected</span>
+        </div>
+        <div id="session-stats"></div>
+    </div>
+
+    <script>
+        let currentSession = null;
+        let ws = null;
+        let sessions = [];
+
+        // DOM elements
+        const sessionList = document.getElementById('session-list');
+        const loading = document.getElementById('loading');
+        const noSession = document.getElementById('no-session');
+        const terminalContainer = document.getElementById('terminal-container');
+        const terminalOutput = document.getElementById('terminal-output');
+        const inputArea = document.getElementById('input-area');
+        const inputBox = document.getElementById('input-box');
+        const sendBtn = document.getElementById('send-btn');
+        const clearBtn = document.getElementById('clear-btn');
+        const statusDot = document.getElementById('status-dot');
+        const statusText = document.getElementById('status-text');
+        const sessionInfo = document.getElementById('session-info');
+        const sessionStats = document.getElementById('session-stats');
+
+        // Load sessions
+        async function loadSessions() {
+            try {
+                const response = await fetch('/sessions');
+                const data = await response.json();
+                sessions = data.sessions;
+                renderSessions();
+            } catch (error) {
+                console.error('Error loading sessions:', error);
+                sessionList.innerHTML = '<div style="padding: 1rem; color: #f48771;">Error loading sessions</div>';
+            } finally {
+                loading.classList.add('hidden');
+            }
+        }
+
+        // Render session list
+        function renderSessions() {
+            if (sessions.length === 0) {
+                sessionList.innerHTML = '<div style="padding: 1rem; color: #858585;">No active sessions</div>';
+                return;
+            }
+
+            sessionList.innerHTML = sessions.map(session => {
+                const age = Math.floor((Date.now() - new Date(session.created).getTime()) / 1000);
+                const ageStr = age < 60 ? `${age}s` : `${Math.floor(age / 60)}m`;
+
+                return `
+                    <div class="session-item" data-session-id="${session.id}">
+                        <div class="session-id">${session.id}</div>
+                        <div class="session-meta">
+                            ${session.metadata.hostname || 'Unknown host'}<br>
+                            ${session.metadata.cwd || '~'}<br>
+                            Created ${ageStr} ago
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            // Add click handlers
+            document.querySelectorAll('.session-item').forEach(item => {
+                item.addEventListener('click', () => {
+                    const sessionId = item.dataset.sessionId;
+                    connectToSession(sessionId);
+                });
+            });
+        }
+
+        // Connect to session
+        function connectToSession(sessionId) {
+            // Close existing connection
+            if (ws) {
+                ws.close();
+            }
+
+            currentSession = sessionId;
+
+            // Update UI
+            document.querySelectorAll('.session-item').forEach(item => {
+                item.classList.toggle('active', item.dataset.sessionId === sessionId);
+            });
+
+            noSession.classList.add('hidden');
+            terminalContainer.classList.remove('hidden');
+            inputArea.classList.remove('hidden');
+
+            // Clear terminal
+            terminalOutput.textContent = '';
+
+            // Connect WebSocket
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}?role=viewer&session=${sessionId}`;
+
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = () => {
+                statusDot.className = 'status-dot connected';
+                statusText.textContent = 'Connected';
+                updateSessionInfo();
+            };
+
+            ws.onmessage = (event) => {
+                const message = JSON.parse(event.data);
+                handleMessage(message);
+            };
+
+            ws.onclose = () => {
+                statusDot.className = 'status-dot disconnected';
+                statusText.textContent = 'Disconnected';
+            };
+
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                appendOutput('\n[Error: Connection failed]\n', '#f48771');
+            };
+        }
+
+        // Handle WebSocket message
+        function handleMessage(message) {
+            switch (message.type) {
+                case 'session-attached':
+                    // Display history
+                    if (message.history && message.history.length > 0) {
+                        message.history.forEach(item => {
+                            if (item.type === 'output') {
+                                appendOutput(item.data);
+                            }
+                        });
+                    }
+                    updateSessionInfo(message.metadata);
+                    break;
+
+                case 'output':
+                    appendOutput(message.data);
+                    break;
+
+                case 'metadata':
+                    updateSessionInfo(message.data);
+                    break;
+
+                case 'exit':
+                    appendOutput(`\n[Session ended with code ${message.code}]\n`, '#f48771');
+                    break;
+
+                case 'wrapper-disconnected':
+                    appendOutput('\n[Wrapper disconnected - waiting for reconnection...]\n', '#f48771');
+                    break;
+
+                case 'error':
+                    appendOutput(`\n[Error: ${message.error}]\n`, '#f48771');
+                    break;
+            }
+        }
+
+        // Append output to terminal
+        function appendOutput(text, color = null) {
+            const span = document.createElement('span');
+            span.textContent = text;
+            if (color) {
+                span.style.color = color;
+            }
+            terminalOutput.appendChild(span);
+
+            // Auto-scroll to bottom
+            terminalContainer.scrollTop = terminalContainer.scrollHeight;
+        }
+
+        // Update session info
+        function updateSessionInfo(metadata = null) {
+            const session = sessions.find(s => s.id === currentSession);
+            if (!session) return;
+
+            const meta = metadata || session.metadata;
+
+            sessionInfo.innerHTML = `
+                Session: <strong>${currentSession.substring(0, 8)}...</strong> |
+                ${meta.hostname || 'Unknown'} |
+                ${meta.cwd || '~'}
+            `;
+
+            sessionStats.textContent = `${meta.user || 'unknown'}@${meta.hostname || 'unknown'}`;
+        }
+
+        // Send input
+        function sendInput() {
+            const input = inputBox.value;
+            if (!input || !ws || ws.readyState !== WebSocket.OPEN) {
+                return;
+            }
+
+            ws.send(JSON.stringify({
+                type: 'input',
+                data: input + '\n'
+            }));
+
+            inputBox.value = '';
+        }
+
+        // Clear terminal
+        function clearTerminal() {
+            terminalOutput.textContent = '';
+        }
+
+        // Event listeners
+        sendBtn.addEventListener('click', sendInput);
+        clearBtn.addEventListener('click', clearTerminal);
+
+        inputBox.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendInput();
+            }
+        });
+
+        // Auto-refresh session list
+        setInterval(loadSessions, 10000); // Refresh every 10 seconds
+
+        // Initial load
+        loadSessions();
+    </script>
+</body>
+</html>

@@ -51,6 +51,17 @@ claude
 
 ### 3. Connect Remotely (Optional)
 
+**Option A: Web Browser (Easiest)**
+
+Just open your browser:
+```
+http://localhost:8765
+```
+
+Click any session to view!
+
+**Option B: Terminal Client**
+
 ```bash
 npm run client
 node client.js <session-id>

@@ -273,7 +273,28 @@ function handleConnection(ws, req) {
 
 // Create HTTP server for WebSocket
 const httpServer = createServer((req, res) => {
-  if (req.url === '/health') {
+  // Serve web client
+  if (req.url === '/' || req.url === '/index.html') {
+    import('fs').then(fs => {
+      import('path').then(path => {
+        import('url').then(url => {
+          const __filename = url.fileURLToPath(import.meta.url);
+          const __dirname = path.dirname(__filename);
+          const filePath = path.join(__dirname, 'public', 'index.html');
+
+          fs.readFile(filePath, 'utf8', (err, data) => {
+            if (err) {
+              res.writeHead(404, { 'Content-Type': 'text/plain' });
+              res.end('Web client not found');
+            } else {
+              res.writeHead(200, { 'Content-Type': 'text/html' });
+              res.end(data);
+            }
+          });
+        });
+      });
+    });
+  } else if (req.url === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
       status: 'ok',
