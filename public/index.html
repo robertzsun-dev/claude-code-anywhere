@@ -288,22 +288,22 @@
             padding: 1rem;
             background: #000000;
             display: none;
-            overflow-y: scroll;
-            overflow-x: hidden;
+            overflow: hidden;
             position: relative;
-            -webkit-overflow-scrolling: touch;
-            touch-action: pan-y;
             min-width: 0;
         }
 
         #terminal {
             /* Let xterm.js control dimensions based on cols/rows */
-            min-height: 100%;
+            height: 100%;
+            width: 100%;
         }
 
         #terminal .xterm-viewport {
-            /* Disable xterm.js scrolling - let container handle it for iOS momentum */
-            overflow: hidden !important;
+            overflow-y: auto !important;
+            overflow-x: hidden !important;
+            -webkit-overflow-scrolling: touch !important;
+            touch-action: pan-y !important;
         }
 
         #terminal .xterm-screen canvas {
@@ -1538,19 +1538,18 @@
                     }
 
                     // Always scroll to bottom after loading session (multiple times to handle large content)
-                    const terminalContainer = document.getElementById('terminal-container');
-                    if (terminalContainer) {
+                    if (term) {
                         // Immediate scroll
-                        terminalContainer.scrollTop = terminalContainer.scrollHeight;
+                        term.scrollToBottom();
 
                         // Scroll again after DOM updates
                         requestAnimationFrame(() => {
-                            terminalContainer.scrollTop = terminalContainer.scrollHeight;
+                            if (term) term.scrollToBottom();
                         });
 
                         // Final scroll for large content (500ms delay)
                         setTimeout(() => {
-                            terminalContainer.scrollTop = terminalContainer.scrollHeight;
+                            if (term) term.scrollToBottom();
                         }, 500);
                     }
 
