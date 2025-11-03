@@ -1368,37 +1368,42 @@
             }
         }
 
+        // Track last rendered sessions to detect actual changes
+        let lastSessionsState = null;
+
         // Render session list
         function renderSessions() {
-            // Preserve focus state before updating DOM
-            const activeElement = document.activeElement;
-            const hadFocus = activeElement && (activeElement.closest('.xterm') || activeElement.classList.contains('xterm'));
-
             if (sessions.length === 0) {
                 sessionList.innerHTML = '<div style="padding: 1rem; color: #858585;">No active sessions</div>';
+                lastSessionsState = null;
                 return;
             }
 
-            // Generate new HTML
-            const newHTML = sessions.map(session => {
-                const age = Math.floor((Date.now() - new Date(session.created).getTime()) / 1000);
-                const ageStr = age < 60 ? `${age}s` : `${Math.floor(age / 60)}m`;
-                const isActive = session.id === currentSession ? 'active' : '';
+            // Create a state key for the sessions (without age, which changes frequently)
+            const sessionStateKey = sessions.map(s =>
+                `${s.id}:${s.metadata.hostname}:${s.metadata.cwd}:${s.id === currentSession}`
+            ).join('|');
 
-                return `
-                    <div class="session-item ${isActive}" data-session-id="${session.id}">
-                        <div class="session-id">${session.id}</div>
-                        <div class="session-meta">
-                            ${session.metadata.hostname || 'Unknown host'}<br>
-                            ${session.metadata.cwd || '~'}<br>
-                            Created ${ageStr} ago
+            // Only rebuild DOM if sessions actually changed (not just age)
+            if (sessionStateKey !== lastSessionsState) {
+                lastSessionsState = sessionStateKey;
+
+                // Generate new HTML
+                const newHTML = sessions.map(session => {
+                    const isActive = session.id === currentSession ? 'active' : '';
+
+                    return `
+                        <div class="session-item ${isActive}" data-session-id="${session.id}">
+                            <div class="session-id">${session.id}</div>
+                            <div class="session-meta">
+                                ${session.metadata.hostname || 'Unknown host'}<br>
+                                ${session.metadata.cwd || '~'}<br>
+                                <span class="session-age" data-created="${session.created}">Calculating...</span>
+                            </div>
                         </div>
-                    </div>
-                `;
-            }).join('');
+                    `;
+                }).join('');
 
-            // Only update if HTML changed (prevents unnecessary DOM manipulation)
-            if (sessionList.innerHTML !== newHTML) {
                 sessionList.innerHTML = newHTML;
 
                 // Add click handlers
@@ -1410,13 +1415,15 @@
                 });
             }
 
-            // Restore focus to terminal if it was focused before
-            if (hadFocus && term) {
-                // Use requestAnimationFrame to ensure DOM is updated
-                requestAnimationFrame(() => {
-                    term.focus();
-                });
-            }
+            // Update ages without touching DOM structure (doesn't cause focus loss)
+            document.querySelectorAll('.session-age').forEach(ageElement => {
+                const created = ageElement.dataset.created;
+                if (created) {
+                    const age = Math.floor((Date.now() - new Date(created).getTime()) / 1000);
+                    const ageStr = age < 60 ? `${age}s` : `${Math.floor(age / 60)}m`;
+                    ageElement.textContent = `Created ${ageStr} ago`;
+                }
+            });
         }
 
         // Connect to session

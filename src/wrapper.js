@@ -223,6 +223,15 @@ function startClaudeCode() {
     });
   });
 
+  // Also capture any errors on stderr (though PTY combines them)
+  terminal.on('data', (data) => {
+    // PTY already forwards this, but log if it's an error pattern
+    const text = data.toString();
+    if (text.toLowerCase().includes('error') || text.toLowerCase().includes('failed')) {
+      logError('[Wrapper] Detected error in output:', text.substring(0, 200));
+    }
+  });
+
   // Handle terminal exit
   terminal.onExit(({ exitCode, signal }) => {
     log(`\n[Wrapper] Claude Code exited with code ${exitCode}${signal ? ` (signal: ${signal})` : ''}`);
