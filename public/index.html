@@ -1008,13 +1008,31 @@
             }
 
             try {
-                // Get terminal dimensions from xterm if available
+                // Get terminal dimensions from xterm if available, otherwise calculate from viewport
                 let cols = 80;
                 let rows = 24;
 
                 if (term) {
                     cols = term.cols;
                     rows = term.rows;
+                } else {
+                    // Calculate dimensions based on viewport size
+                    // Assume monospace font with ~9px char width and ~17px line height
+                    const terminalArea = document.getElementById('terminal-container');
+                    if (terminalArea) {
+                        const width = terminalArea.clientWidth || window.innerWidth * 0.7;
+                        const height = terminalArea.clientHeight || window.innerHeight * 0.8;
+                        cols = Math.floor(width / 9);
+                        rows = Math.floor(height / 17);
+                    } else {
+                        // Fallback: use window dimensions
+                        cols = Math.floor(window.innerWidth * 0.7 / 9);
+                        rows = Math.floor(window.innerHeight * 0.8 / 17);
+                    }
+                    // Clamp to reasonable values
+                    cols = Math.max(80, Math.min(cols, 300));
+                    rows = Math.max(24, Math.min(rows, 100));
+                    console.log('Calculated terminal dimensions for new session:', { cols, rows });
                 }
 
                 const response = await fetch('/start-session', {
