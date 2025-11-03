@@ -65,21 +65,26 @@ Session {
 **Purpose**: Spawns Claude Code in PTY and streams I/O to server
 
 **Key Features**:
-- Uses `node-pty` to spawn Claude Code
+- Uses `node-pty` to spawn Claude Code or attach to tmux sessions
 - Bidirectional I/O streaming
 - Local terminal passthrough (user sees output locally too)
 - Terminal resize handling
 - Signal handling (SIGINT, SIGTERM)
 - Seamless mode support (silent operation)
+- tmux session attachment support
 
 **Environment Variables**:
 - `CLAUDE_CMD`: Claude binary path (default: `claude`)
 - `CLAUDE_REMOTE_SERVER`: Server URL (default: `ws://localhost:8085`)
 - `CLAUDE_SEAMLESS_MODE`: Suppress wrapper messages (default: `false`)
 
+**Command Line Arguments**:
+- `--tmux-session <name>`: Attach to existing tmux session instead of spawning new process
+
 **Modes**:
 - **Normal**: Shows wrapper status messages
 - **Seamless**: Silent, only shows Claude Code output (for shim)
+- **tmux**: Attaches to existing tmux session (used by browser session starter)
 
 ### 3. Web Client (`public/index.html`)
 
@@ -92,9 +97,12 @@ Session {
 - Interactive input
 - Scrollback support (10,000 lines)
 - Responsive design (desktop/tablet/mobile)
+- File browser for directory selection
+- Session starter (creates tmux sessions)
 
 **UI Components**:
-- Session selector
+- Session selector with "+ Start New Session" button
+- File browser modal (directory navigation)
 - Terminal display area (xterm.js)
 - Input controls
 - Auto-reconnect on connection loss
@@ -104,6 +112,8 @@ Session {
 - Type in terminal to send input
 - Scroll to view history
 - Auto-refresh session list
+- Browse filesystem and create sessions in any directory
+- Sessions automatically appear after creation
 
 ### 4. Seamless Wrapper (`shim/`)
 
@@ -284,6 +294,13 @@ GET /health
 
 GET /sessions
 → { sessions: [{ id, created, lastActivity, metadata }, ...] }
+
+GET /browse?path=<path>
+→ { currentPath: "/home/user", items: [{ name, path, isDirectory }, ...] }
+
+POST /start-session
+Body: { workingDir: "/path", command: "claude", cols: 120, rows: 30 }
+→ { success: true, sessionId: "abc123", tmuxSession: "claude-abc123", workingDir: "/path", message: "..." }
 ```
 
 ## Security Considerations

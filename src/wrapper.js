@@ -19,14 +19,39 @@ const __dirname = dirname(__filename);
 const SERVER_URL = process.env.CLAUDE_REMOTE_SERVER || 'ws://localhost:8085';
 const SEAMLESS_MODE = process.env.CLAUDE_SEAMLESS_MODE === 'true';
 
+// Parse command line arguments
+function parseArgs() {
+  const args = process.argv.slice(2);
+  const parsed = {
+    tmuxSession: null,
+    remainingArgs: []
+  };
+
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--tmux-session' && i + 1 < args.length) {
+      parsed.tmuxSession = args[i + 1];
+      i++; // Skip the next arg (session name)
+    } else {
+      parsed.remainingArgs.push(args[i]);
+    }
+  }
+
+  return parsed;
+}
+
+const parsedArgs = parseArgs();
+
 // Configuration
 const config = {
-  command: process.env.CLAUDE_CMD || 'claude',
-  args: process.argv.slice(2), // Forward any args passed to wrapper
+  command: parsedArgs.tmuxSession ? 'tmux' : (process.env.CLAUDE_CMD || 'claude'),
+  args: parsedArgs.tmuxSession
+    ? ['attach-session', '-t', parsedArgs.tmuxSession]
+    : parsedArgs.remainingArgs,
   cwd: process.cwd(),
   env: process.env,
   cols: process.stdout.columns || 80,
-  rows: process.stdout.rows || 24
+  rows: process.stdout.rows || 24,
+  tmuxSession: parsedArgs.tmuxSession
 };
 
 // Logging helper - only log if not in seamless mode
@@ -91,18 +116,24 @@ function handleServerMessage(message) {
       log('');
 
       // Send initial metadata
+      const metadata = {
+        cwd: config.cwd,
+        command: config.command,
+        args: config.args,
+        hostname: os.hostname(),
+        platform: os.platform(),
+        user: os.userInfo().username,
+        cols: config.cols,
+        rows: config.rows
+      };
+
+      if (config.tmuxSession) {
+        metadata.tmuxSession = config.tmuxSession;
+      }
+
       sendToServer({
         type: 'metadata',
-        data: {
-          cwd: config.cwd,
-          command: config.command,
-          args: config.args,
-          hostname: os.hostname(),
-          platform: os.platform(),
-          user: os.userInfo().username,
-          cols: config.cols,
-          rows: config.rows
-        }
+        data: metadata
       });
 
       // Start Claude Code
@@ -142,7 +173,11 @@ function sendToServer(message) {
 }
 
 function startClaudeCode() {
-  log(`[Wrapper] Starting Claude Code: ${config.command} ${config.args.join(' ')}`);
+  if (config.tmuxSession) {
+    log(`[Wrapper] Attaching to tmux session: ${config.tmuxSession}`);
+  } else {
+    log(`[Wrapper] Starting Claude Code: ${config.command} ${config.args.join(' ')}`);
+  }
 
   // Spawn Claude Code in a PTY
   terminal = pty.spawn(config.command, config.args, {

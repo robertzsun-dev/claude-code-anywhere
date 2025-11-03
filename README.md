@@ -17,6 +17,8 @@ Access and control your Claude Code CLI sessions from anywhere. Perfect for:
 - 🔄 **Auto-Reconnect**: Seamless reconnection if connection drops
 - 🖥️ **Web Client**: Browser-based terminal (no installation needed)
 - 📦 **Seamless Mode**: Zero-config interception of `claude` command
+- 📁 **File Browser**: Start sessions in any directory from web interface
+- 🎯 **tmux Integration**: Sessions created in persistent tmux sessions
 
 🛠️ **Technical Features**:
 - WebSocket-based real-time communication
@@ -150,6 +152,37 @@ The built-in web client provides browser-based access with no installation requi
 - `Ctrl+L`: Clear terminal
 - `Scroll/Mouse`: Navigate history
 
+### Starting Sessions from Browser
+
+You can start new Claude Code sessions directly from the web interface:
+
+1. Click **"+ Start New Session"** button in the sidebar
+2. Browse filesystem to select a directory
+3. Click **"Select This Directory"** to create the session
+4. The session will appear in the session list automatically
+
+**Features**:
+- 📁 **File Browser**: Navigate directories with visual interface
+- 🔒 **Secure**: Only allows browsing home directory and `/tmp`
+- 🖥️ **tmux Integration**: Sessions created in detached tmux sessions
+- 📏 **Automatic Sizing**: Terminal dimensions match your browser window
+- 🚀 **Instant Access**: Connect to new sessions immediately
+
+**How it works**:
+- Server creates a tmux session with Claude Code in your selected directory
+- Wrapper automatically attaches to the tmux session
+- Session appears in the web interface for viewing/control
+- tmux session persists even if you disconnect
+
+**Access tmux sessions directly**:
+```bash
+# List active sessions
+tmux list-sessions
+
+# Attach to a session
+tmux attach -t claude-<session-id>
+```
+
 ## Usage
 
 ### Server
@@ -174,6 +207,8 @@ HOST=0.0.0.0 npm run server
 - `GET /` - Web client
 - `GET /health` - Server health check
 - `GET /sessions` - List active sessions (JSON)
+- `GET /browse?path=<path>` - Browse filesystem (returns directory contents)
+- `POST /start-session` - Create new tmux session (JSON body: `{workingDir, command, cols, rows}`)
 
 ### Wrapper (Manual Mode)
 
@@ -188,12 +223,18 @@ CLAUDE_REMOTE_SERVER=ws://192.168.1.100:8085 npm run wrapper
 # Pass arguments to Claude
 npm run wrapper -- chat
 npm run wrapper -- --help
+
+# Attach to existing tmux session
+npm run wrapper -- --tmux-session claude-abc123
 ```
 
 **Environment Variables**:
 - `CLAUDE_REMOTE_SERVER` - Server URL (default: `ws://localhost:8085`)
 - `CLAUDE_CMD` - Claude binary path (default: `claude`)
 - `CLAUDE_SEAMLESS_MODE` - Silent mode (default: `false`)
+
+**Command Line Arguments**:
+- `--tmux-session <name>` - Attach to existing tmux session instead of spawning new process
 
 ## Remote Access
 

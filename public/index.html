@@ -380,6 +380,178 @@
                 font-size: 0.6875rem;
             }
         }
+
+        /* Modal styles */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(8px);
+        }
+
+        .modal.show {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-content {
+            background: #18181b;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            width: 90%;
+            max-width: 600px;
+            max-height: 80vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+        }
+
+        .modal-header {
+            padding: 1.25rem 1.5rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-header h3 {
+            font-size: 1rem;
+            font-weight: 600;
+            color: #fafafa;
+        }
+
+        .modal-close {
+            background: transparent;
+            border: none;
+            color: #a1a1aa;
+            font-size: 1.5rem;
+            cursor: pointer;
+            padding: 0;
+            line-height: 1;
+            transition: color 0.15s;
+        }
+
+        .modal-close:hover {
+            color: #fafafa;
+        }
+
+        .modal-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1rem;
+        }
+
+        .current-path {
+            padding: 0.75rem 1rem;
+            background: #09090b;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            font-size: 0.8125rem;
+            color: #a1a1aa;
+            font-family: 'Monaco', 'Menlo', monospace;
+            word-break: break-all;
+        }
+
+        .file-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+
+        .file-item {
+            padding: 0.75rem 1rem;
+            background: transparent;
+            border: 1px solid transparent;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.15s;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-size: 0.8125rem;
+        }
+
+        .file-item:hover {
+            background: rgba(255, 255, 255, 0.04);
+            border-color: rgba(255, 255, 255, 0.1);
+        }
+
+        .file-item.directory {
+            color: #60a5fa;
+        }
+
+        .file-item.file {
+            color: #a1a1aa;
+        }
+
+        .file-icon {
+            font-size: 1rem;
+            width: 1.25rem;
+            text-align: center;
+        }
+
+        .modal-footer {
+            padding: 1rem 1.5rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.06);
+            display: flex;
+            justify-content: flex-end;
+            gap: 0.75rem;
+        }
+
+        .btn {
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            font-size: 0.8125rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s;
+            border: none;
+        }
+
+        .btn-primary {
+            background: #2563eb;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #1d4ed8;
+        }
+
+        .btn-secondary {
+            background: transparent;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: #fafafa;
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.06);
+        }
+
+        #start-session-btn {
+            width: calc(100% - 2.5rem);
+            margin: 1rem 1.25rem;
+            padding: 0.75rem;
+            background: #2563eb;
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-size: 0.8125rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        #start-session-btn:hover {
+            background: #1d4ed8;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+        }
     </style>
 </head>
 <body>
@@ -394,6 +566,7 @@
     <div id="main">
         <div id="sidebar">
             <h2>Active Sessions</h2>
+            <button id="start-session-btn">+ Start New Session</button>
             <div id="loading">Loading sessions...</div>
             <div id="session-list"></div>
         </div>
@@ -771,11 +944,137 @@
         // Terminal input is handled directly by xterm.js
         // No need for separate input box
 
+        // File Browser functionality
+        let currentPath = '';
+
+        function openFileBrowser() {
+            const modal = document.getElementById('file-browser-modal');
+            modal.classList.add('show');
+            browseDirectory(''); // Start at home directory
+        }
+
+        function closeFileBrowser() {
+            const modal = document.getElementById('file-browser-modal');
+            modal.classList.remove('show');
+        }
+
+        async function browseDirectory(path) {
+            try {
+                const url = `/browse?path=${encodeURIComponent(path)}`;
+                const response = await fetch(url);
+                const data = await response.json();
+
+                if (data.error) {
+                    alert('Error: ' + data.error);
+                    return;
+                }
+
+                currentPath = data.currentPath;
+                document.getElementById('current-path-display').textContent = currentPath;
+
+                const fileList = document.getElementById('file-list');
+                fileList.innerHTML = '';
+
+                data.items.forEach(item => {
+                    const fileItem = document.createElement('div');
+                    fileItem.className = `file-item ${item.isDirectory ? 'directory' : 'file'}`;
+
+                    const icon = document.createElement('span');
+                    icon.className = 'file-icon';
+                    icon.textContent = item.isDirectory ? '📁' : '📄';
+
+                    const name = document.createElement('span');
+                    name.textContent = item.name;
+
+                    fileItem.appendChild(icon);
+                    fileItem.appendChild(name);
+
+                    if (item.isDirectory) {
+                        fileItem.onclick = () => browseDirectory(item.path);
+                    }
+
+                    fileList.appendChild(fileItem);
+                });
+            } catch (err) {
+                console.error('Error browsing directory:', err);
+                alert('Error browsing directory: ' + err.message);
+            }
+        }
+
+        async function selectCurrentDirectory() {
+            if (!currentPath) {
+                alert('No directory selected');
+                return;
+            }
+
+            try {
+                // Get terminal dimensions from xterm if available
+                let cols = 80;
+                let rows = 24;
+
+                if (term) {
+                    cols = term.cols;
+                    rows = term.rows;
+                }
+
+                const response = await fetch('/start-session', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        workingDir: currentPath,
+                        command: 'claude',
+                        cols: cols,
+                        rows: rows
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.error) {
+                    alert('Error: ' + result.error);
+                    return;
+                }
+
+                closeFileBrowser();
+
+                alert(`Session created successfully!\n\nSession ID: ${result.sessionId}\nTmux session: ${result.tmuxSession}\n\n${result.message}`);
+
+                // Reload sessions list
+                loadSessions();
+            } catch (err) {
+                console.error('Error starting session:', err);
+                alert('Error starting session: ' + err.message);
+            }
+        }
+
+        // Add event listener for Start New Session button
+        document.getElementById('start-session-btn').addEventListener('click', openFileBrowser);
+
         // Auto-refresh session list
         setInterval(loadSessions, 10000); // Refresh every 10 seconds
 
         // Initial load
         loadSessions();
     </script>
+
+    <!-- File Browser Modal -->
+    <div id="file-browser-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Select Directory</h3>
+                <button class="modal-close" onclick="closeFileBrowser()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="current-path" id="current-path-display"></div>
+                <div class="file-list" id="file-list"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeFileBrowser()">Cancel</button>
+                <button class="btn btn-primary" onclick="selectCurrentDirectory()">Select This Directory</button>
+            </div>
+        </div>
+    </div>
 </body>
 </html>

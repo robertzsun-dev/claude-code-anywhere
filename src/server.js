@@ -10,6 +10,10 @@
 import { WebSocketServer } from 'ws';
 import { createServer } from 'http';
 import crypto from 'crypto';
+import { spawn } from 'child_process';
+import { readdir, stat } from 'fs/promises';
+import { join, resolve, dirname } from 'path';
+import os from 'os';
 
 const PORT = process.env.PORT || 8085;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -271,6 +275,208 @@ function handleConnection(ws, req) {
   });
 }
 
+// Directory browser handler
+async function handleBrowseRequest(req, res) {
+  try {
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    let requestedPath = url.searchParams.get('path') || os.homedir();
+
+    // Resolve and normalize path
+    requestedPath = resolve(requestedPath);
+
+    // Basic security: don't allow browsing outside user's home or /tmp
+    const homeDir = os.homedir();
+    if (!requestedPath.startsWith(homeDir) && !requestedPath.startsWith('/tmp')) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Access denied' }));
+      return;
+    }
+
+    // Read directory contents
+    const entries = await readdir(requestedPath, { withFileTypes: true });
+    const items = [];
+
+    // Add parent directory entry if not at root
+    if (requestedPath !== '/' && requestedPath !== homeDir) {
+      items.push({
+        name: '..',
+        path: dirname(requestedPath),
+        isDirectory: true,
+        isParent: true
+      });
+    }
+
+    // Add directories first, then files
+    const dirs = [];
+    const files = [];
+
+    for (const entry of entries) {
+      // Skip hidden files
+      if (entry.name.startsWith('.')) continue;
+
+      const fullPath = join(requestedPath, entry.name);
+      const item = {
+        name: entry.name,
+        path: fullPath,
+        isDirectory: entry.isDirectory()
+      };
+
+      if (entry.isDirectory()) {
+        dirs.push(item);
+      } else {
+        files.push(item);
+      }
+    }
+
+    // Sort alphabetically
+    dirs.sort((a, b) => a.name.localeCompare(b.name));
+    files.sort((a, b) => a.name.localeCompare(b.name));
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      currentPath: requestedPath,
+      items: [...items, ...dirs, ...files]
+    }));
+  } catch (err) {
+    console.error('[Browse] Error:', err.message);
+    res.writeHead(500, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: err.message }));
+  }
+}
+
+// Start session handler
+async function handleStartSession(req, res) {
+  let body = '';
+
+  req.on('data', chunk => {
+    body += chunk.toString();
+  });
+
+  req.on('end', async () => {
+    try {
+      const { workingDir, command, cols, rows } = JSON.parse(body);
+
+      if (!workingDir) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'workingDir is required' }));
+        return;
+      }
+
+      // Validate directory exists and is accessible
+      const resolvedPath = resolve(workingDir);
+      const homeDir = os.homedir();
+
+      // Security check
+      if (!resolvedPath.startsWith(homeDir) && !resolvedPath.startsWith('/tmp')) {
+        res.writeHead(403, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Access denied' }));
+        return;
+      }
+
+      try {
+        const stats = await stat(resolvedPath);
+        if (!stats.isDirectory()) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Not a directory' }));
+          return;
+        }
+      } catch (err) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Directory not found' }));
+        return;
+      }
+
+      // Generate session ID
+      const sessionId = crypto.randomBytes(8).toString('hex');
+      const tmuxSessionName = `claude-${sessionId}`;
+
+      // Check if tmux is available
+      const tmuxCheck = spawn('which', ['tmux']);
+      let tmuxAvailable = false;
+
+      await new Promise((resolve) => {
+        tmuxCheck.on('close', (code) => {
+          tmuxAvailable = code === 0;
+          resolve();
+        });
+      });
+
+      if (!tmuxAvailable) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'tmux is not installed' }));
+        return;
+      }
+
+      // Create tmux session with Claude
+      const claudeCmd = command || 'claude';
+      const tmuxArgs = [
+        'new-session',
+        '-d',  // Detached
+        '-s', tmuxSessionName,  // Session name
+        '-c', resolvedPath  // Working directory
+      ];
+
+      // Set terminal dimensions if provided
+      if (cols && rows) {
+        tmuxArgs.push('-x', cols.toString(), '-y', rows.toString());
+      }
+
+      tmuxArgs.push(claudeCmd);
+
+      const tmuxCmd = spawn('tmux', tmuxArgs);
+
+      await new Promise((resolve, reject) => {
+        tmuxCmd.on('close', (code) => {
+          if (code === 0) {
+            resolve();
+          } else {
+            reject(new Error(`tmux failed with code ${code}`));
+          }
+        });
+
+        tmuxCmd.on('error', reject);
+      });
+
+      console.log(`[Session] Created tmux session ${tmuxSessionName} in ${resolvedPath}`);
+
+      // Now spawn wrapper.js to attach to this tmux session
+      // This will connect the tmux session to our WebSocket server
+      const wrapperPath = new URL('./wrapper.js', import.meta.url).pathname;
+      const wrapperProcess = spawn('node', [
+        wrapperPath,
+        '--tmux-session', tmuxSessionName
+      ], {
+        cwd: resolvedPath,
+        detached: true,
+        stdio: 'ignore',
+        env: {
+          ...process.env,
+          CLAUDE_SEAMLESS_MODE: 'true'  // Silent mode for wrapper
+        }
+      });
+
+      // Detach the wrapper process so it runs independently
+      wrapperProcess.unref();
+
+      console.log(`[Session] Spawned wrapper for tmux session ${tmuxSessionName}`);
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        success: true,
+        sessionId,
+        tmuxSession: tmuxSessionName,
+        workingDir: resolvedPath,
+        message: `Session ${sessionId} created in ${resolvedPath}`
+      }));
+
+    } catch (err) {
+      console.error('[Start Session] Error:', err.message);
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: err.message }));
+    }
+  });
+}
+
 // Create HTTP server for WebSocket
 const httpServer = createServer((req, res) => {
   // Serve web client
@@ -310,6 +516,12 @@ const httpServer = createServer((req, res) => {
     }));
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ sessions: sessionList }));
+  } else if (req.url.startsWith('/browse')) {
+    // File browser endpoint
+    handleBrowseRequest(req, res);
+  } else if (req.url === '/start-session' && req.method === 'POST') {
+    // Start new session endpoint
+    handleStartSession(req, res);
   } else {
     res.writeHead(404);
     res.end('Not found');
