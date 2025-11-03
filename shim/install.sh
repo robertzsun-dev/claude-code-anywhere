@@ -22,8 +22,8 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 CLAUDE_REMOTE_DIR="$(dirname "$SCRIPT_DIR")"
 WRAPPER_PATH="/usr/local/bin/claude"
 
-# Find the real claude binary
-echo -e "${CYAN}1. Finding claude binary...${NC}"
+# Check if claude is installed
+echo -e "${CYAN}1. Checking for claude installation...${NC}"
 CLAUDE_BIN=$(which claude 2>/dev/null || echo "")
 
 if [ -z "$CLAUDE_BIN" ]; then
@@ -34,19 +34,12 @@ fi
 
 echo -e "${GREEN}✓ Found claude at: $CLAUDE_BIN${NC}"
 
-# Resolve symlinks to find the real binary
-CLAUDE_REAL=$(readlink -f "$CLAUDE_BIN" 2>/dev/null || realpath "$CLAUDE_BIN" 2>/dev/null || echo "$CLAUDE_BIN")
-echo -e "${GREEN}✓ Real binary: $CLAUDE_REAL${NC}"
-
 # Check if wrapper already installed
 if [ -f "$WRAPPER_PATH" ]; then
     echo -e "${YELLOW}! Wrapper already installed at $WRAPPER_PATH${NC}"
     echo -e "${YELLOW}  Run uninstall.sh first if you want to reinstall${NC}"
     exit 0
 fi
-
-# Get the directory containing the real claude binary
-CLAUDE_DIR=$(dirname "$CLAUDE_REAL")
 
 # Install our wrapper
 echo ""
@@ -62,18 +55,32 @@ cat > /tmp/claude-wrapper << 'EOF'
 
 # Configuration (replaced by install script)
 CLAUDE_REMOTE_DIR="__CLAUDE_REMOTE_DIR__"
-CLAUDE_REAL_DIR="__CLAUDE_REAL_DIR__"
 SERVER_URL="${CLAUDE_REMOTE_SERVER:-ws://localhost:8765}"
 AUTO_CONNECT="${CLAUDE_AUTO_CONNECT:-true}"
 
-# Find the original claude binary by looking in the real directory
-# This way if npm updates it, we still find the new version
-CLAUDE_ORIGINAL="$CLAUDE_REAL_DIR/claude"
+# Find the original claude binary by removing /usr/local/bin from PATH
+# and searching for the next 'claude' command
+find_original_claude() {
+    # Remove /usr/local/bin from PATH to find the next claude
+    local new_path=$(echo "$PATH" | tr ':' '\n' | grep -v '^/usr/local/bin$' | tr '\n' ':' | sed 's/:$//')
 
-if [ ! -f "$CLAUDE_ORIGINAL" ]; then
-    echo "Error: Original claude binary not found at $CLAUDE_ORIGINAL" >&2
-    echo "The npm package may have been updated or moved." >&2
-    echo "Please run: cd $CLAUDE_REMOTE_DIR/shim && sudo ./uninstall.sh && sudo ./install.sh" >&2
+    # Search for claude in the modified PATH
+    local claude_path=$(PATH="$new_path" which claude 2>/dev/null)
+
+    if [ -n "$claude_path" ] && [ -f "$claude_path" ]; then
+        echo "$claude_path"
+        return 0
+    fi
+
+    return 1
+}
+
+CLAUDE_ORIGINAL=$(find_original_claude)
+
+if [ -z "$CLAUDE_ORIGINAL" ]; then
+    echo "Error: Original claude binary not found in PATH" >&2
+    echo "Searched PATH (excluding /usr/local/bin): $(echo "$PATH" | tr ':' '\n' | grep -v '^/usr/local/bin$' | tr '\n' ':')" >&2
+    echo "Please ensure Claude Code is installed: npm install -g @anthropic-ai/claude-code" >&2
     exit 1
 fi
 
@@ -106,7 +113,6 @@ EOF
 
 # Replace placeholders
 sed -i "s|__CLAUDE_REMOTE_DIR__|$CLAUDE_REMOTE_DIR|g" /tmp/claude-wrapper
-sed -i "s|__CLAUDE_REAL_DIR__|$CLAUDE_DIR|g" /tmp/claude-wrapper
 
 # Install the wrapper to /usr/local/bin (requires sudo)
 echo -e "${YELLOW}  Installing wrapper to /usr/local/bin (requires sudo)...${NC}"
@@ -281,9 +287,9 @@ echo -e "${GREEN}The 'claude' command will now automatically connect to the sess
 echo ""
 echo -e "${CYAN}How it works:${NC}"
 echo -e "  - Wrapper installed at: ${YELLOW}$WRAPPER_PATH${NC}"
-echo -e "  - Original claude at: ${YELLOW}$CLAUDE_REAL${NC}"
+echo -e "  - Wrapper dynamically finds original claude in PATH at runtime"
 echo -e "  - PATH priority ensures wrapper is called first"
-echo -e "  - Wrapper calls original claude (survives npm updates!)"
+echo -e "  - Survives npm updates - no hardcoded paths!"
 echo ""
 echo -e "${CYAN}Next steps:${NC}"
 if [ "$SYSTEMD_INSTALLED" = true ]; then
@@ -301,7 +307,7 @@ echo ""
 echo -e "${CYAN}Configuration:${NC}"
 echo -e "  Config file: ${YELLOW}$CONFIG_FILE${NC}"
 echo -e "  Wrapper: ${YELLOW}$WRAPPER_PATH${NC}"
-echo -e "  Original claude: ${YELLOW}$CLAUDE_REAL${NC}"
+echo -e "  Original claude: ${YELLOW}Dynamically resolved from PATH${NC}"
 if [ "$SYSTEMD_INSTALLED" = true ]; then
     echo -e "  Systemd service: ${YELLOW}claude-remote-server.service${NC}"
 fi
