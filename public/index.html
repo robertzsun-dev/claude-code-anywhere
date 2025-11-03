@@ -146,6 +146,8 @@
             display: none;
             overflow: auto;
             position: relative;
+            -webkit-overflow-scrolling: touch;
+            touch-action: pan-x pan-y;
         }
 
         #terminal {
@@ -312,6 +314,50 @@
         ::-webkit-scrollbar-thumb:hover {
             background: rgba(255, 255, 255, 0.15);
         }
+
+        /* Mobile optimizations */
+        @media (max-width: 768px) {
+            #header {
+                height: 44px;
+                padding: 0 0.75rem;
+            }
+
+            #header h1 {
+                font-size: 0.8125rem;
+            }
+
+            #session-info {
+                display: none;
+            }
+
+            #sidebar {
+                position: absolute;
+                left: 0;
+                top: 0;
+                bottom: 0;
+                z-index: 100;
+                box-shadow: 2px 0 8px rgba(0, 0, 0, 0.3);
+            }
+
+            #sidebar.hidden {
+                margin-left: -280px;
+            }
+
+            #sidebar-toggle {
+                padding: 0.25rem 0.5rem;
+                font-size: 0.875rem;
+            }
+
+            #terminal-container {
+                padding: 0.5rem;
+            }
+
+            #status-bar {
+                height: 32px;
+                padding: 0 0.75rem;
+                font-size: 0.6875rem;
+            }
+        }
     </style>
 </head>
 <body>
@@ -373,6 +419,11 @@
         const statusText = document.getElementById('status-text');
         const sessionInfo = document.getElementById('session-info');
         const sessionStats = document.getElementById('session-stats');
+
+        // Hide sidebar by default on mobile
+        if (window.innerWidth <= 768) {
+            sidebar.classList.add('hidden');
+        }
 
         // Sidebar toggle
         function toggleSidebar() {
