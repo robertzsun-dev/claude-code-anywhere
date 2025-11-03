@@ -1034,18 +1034,13 @@
                     const charWidth = charMeasure.actualCellWidth;
                     const charHeight = charMeasure.actualCellHeight;
 
-                    // Get available space
-                    const terminalArea = document.getElementById('terminal-container');
-                    let availableWidth, availableHeight;
+                    // Get available space - use full viewport for better mobile support
+                    // Account for UI chrome (header, padding, margins)
+                    const headerHeight = 60; // Approximate header height
+                    const padding = 40; // UI padding/margins
 
-                    if (terminalArea && terminalArea.clientWidth > 0) {
-                        availableWidth = terminalArea.clientWidth - 20; // padding
-                        availableHeight = terminalArea.clientHeight - 20;
-                    } else {
-                        // Use viewport as fallback
-                        availableWidth = window.innerWidth * 0.7;
-                        availableHeight = window.innerHeight - 200; // header/footer space
-                    }
+                    const availableWidth = window.innerWidth - padding;
+                    const availableHeight = window.innerHeight - headerHeight - padding;
 
                     cols = Math.floor(availableWidth / charWidth);
                     rows = Math.floor(availableHeight / charHeight);
@@ -1055,11 +1050,18 @@
                     document.body.removeChild(tempContainer);
 
                     // Clamp to reasonable values
-                    cols = Math.max(80, Math.min(cols, 300));
-                    rows = Math.max(24, Math.min(rows, 100));
+                    cols = Math.max(40, Math.min(cols, 300));  // Lower minimum for mobile
+                    rows = Math.max(20, Math.min(rows, 100));  // Lower minimum for mobile
+
                     console.log('Calculated terminal dimensions for new session:', {
-                        cols, rows, charWidth, charHeight,
-                        availableWidth, availableHeight
+                        device: {
+                            width: window.innerWidth,
+                            height: window.innerHeight,
+                            userAgent: navigator.userAgent.substr(0, 50)
+                        },
+                        charDimensions: { charWidth, charHeight },
+                        available: { availableWidth, availableHeight },
+                        terminal: { cols, rows }
                     });
                 }
 
