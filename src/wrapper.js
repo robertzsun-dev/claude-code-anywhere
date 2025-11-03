@@ -49,8 +49,8 @@ const config = {
     : parsedArgs.remainingArgs,
   cwd: process.cwd(),
   env: process.env,
-  cols: process.stdout.columns || 80,
-  rows: process.stdout.rows || 24,
+  cols: parseInt(process.env.CLAUDE_COLS) || process.stdout.columns || 80,
+  rows: parseInt(process.env.CLAUDE_ROWS) || process.stdout.rows || 24,
   tmuxSession: parsedArgs.tmuxSession
 };
 

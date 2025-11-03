@@ -388,85 +388,37 @@ async function handleStartSession(req, res) {
 
       // Generate session ID
       const sessionId = crypto.randomBytes(8).toString('hex');
-      const tmuxSessionName = `claude-${sessionId}`;
 
-      // Check if tmux is available
-      const tmuxCheck = spawn('which', ['tmux']);
-      let tmuxAvailable = false;
-
-      await new Promise((resolve) => {
-        tmuxCheck.on('close', (code) => {
-          tmuxAvailable = code === 0;
-          resolve();
-        });
-      });
-
-      if (!tmuxAvailable) {
-        res.writeHead(400, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'tmux is not installed' }));
-        return;
-      }
-
-      // Create tmux session with Claude
-      const claudeCmd = command || 'claude';
-      const tmuxArgs = [
-        'new-session',
-        '-d',  // Detached
-        '-s', tmuxSessionName,  // Session name
-        '-c', resolvedPath  // Working directory
-      ];
-
-      // Set terminal dimensions if provided
-      if (cols && rows) {
-        tmuxArgs.push('-x', cols.toString(), '-y', rows.toString());
-      }
-
-      tmuxArgs.push(claudeCmd);
-
-      const tmuxCmd = spawn('tmux', tmuxArgs);
-
-      await new Promise((resolve, reject) => {
-        tmuxCmd.on('close', (code) => {
-          if (code === 0) {
-            resolve();
-          } else {
-            reject(new Error(`tmux failed with code ${code}`));
-          }
-        });
-
-        tmuxCmd.on('error', reject);
-      });
-
-      console.log(`[Session] Created tmux session ${tmuxSessionName} in ${resolvedPath}`);
-
-      // Now spawn wrapper.js to attach to this tmux session
-      // This will connect the tmux session to our WebSocket server
+      // Spawn wrapper.js directly - it will spawn Claude in the specified directory
       const wrapperPath = new URL('./wrapper.js', import.meta.url).pathname;
-      const wrapperProcess = spawn('node', [
-        wrapperPath,
-        '--tmux-session', tmuxSessionName
-      ], {
+      const claudeCmd = command || 'claude';
+
+      const wrapperProcess = spawn('node', [wrapperPath], {
         cwd: resolvedPath,
         detached: true,
         stdio: 'ignore',
         env: {
           ...process.env,
-          CLAUDE_SEAMLESS_MODE: 'true'  // Silent mode for wrapper
+          CLAUDE_CMD: claudeCmd,
+          CLAUDE_SEAMLESS_MODE: 'true',
+          CLAUDE_REMOTE_SERVER: `ws://${HOST}:${PORT}`,
+          // Pass terminal dimensions via environment for wrapper to use
+          CLAUDE_COLS: cols ? cols.toString() : '80',
+          CLAUDE_ROWS: rows ? rows.toString() : '24'
         }
       });
 
       // Detach the wrapper process so it runs independently
       wrapperProcess.unref();
 
-      console.log(`[Session] Spawned wrapper for tmux session ${tmuxSessionName}`);
+      console.log(`[Session] Spawned wrapper in ${resolvedPath} (session will be created by wrapper)`);
 
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         success: true,
-        sessionId,
-        tmuxSession: tmuxSessionName,
+        sessionId: 'pending',  // Session ID will be assigned by wrapper when it connects
         workingDir: resolvedPath,
-        message: `Session ${sessionId} created in ${resolvedPath}`
+        message: `Session starting in ${resolvedPath}. It will appear in the list momentarily.`
       }));
 
     } catch (err) {

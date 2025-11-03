@@ -1039,10 +1039,20 @@
 
                 closeFileBrowser();
 
-                alert(`Session created successfully!\n\nSession ID: ${result.sessionId}\nTmux session: ${result.tmuxSession}\n\n${result.message}`);
+                alert(`Session starting in ${result.workingDir}!\n\nThe session will appear in the list shortly.`);
 
-                // Reload sessions list
+                // Reload sessions list immediately and then poll frequently for the new session
                 loadSessions();
+
+                // Poll more frequently for 30 seconds to catch the new session
+                let pollCount = 0;
+                const pollInterval = setInterval(() => {
+                    loadSessions();
+                    pollCount++;
+                    if (pollCount >= 15) { // 15 polls * 2 seconds = 30 seconds
+                        clearInterval(pollInterval);
+                    }
+                }, 2000);
             } catch (err) {
                 console.error('Error starting session:', err);
                 alert('Error starting session: ' + err.message);
