@@ -30,6 +30,7 @@ This will:
 2. Rename it to `claude-original`
 3. Install the wrapper shim as `claude`
 4. Create a config file at `~/.claude-remote.conf`
+5. **Optionally** install the server as a systemd service (auto-start on boot)
 
 ### What Gets Changed
 
@@ -176,6 +177,66 @@ When launched through the shim, the wrapper runs in "seamless mode":
 - If server running: Same performance as manual wrapper
 - If server not running: Same as original claude (no overhead)
 
+## Systemd Service (Optional)
+
+During installation, you can optionally install the server as a systemd service for automatic startup:
+
+### Benefits
+
+- **Auto-start on boot**: Server starts automatically when system boots
+- **Automatic restart**: If server crashes, systemd restarts it
+- **Easy management**: Use standard systemd commands
+- **Logging**: Integrated with journald
+
+### Installation
+
+When running `./install.sh`, answer **yes** when asked:
+
+```
+Install systemd service? [y/N] y
+Enable service to start on boot? [Y/n] Y
+Start service now? [Y/n] Y
+```
+
+### Service Commands
+
+```bash
+# Status
+sudo systemctl status claude-remote-server.service
+
+# Start/stop/restart
+sudo systemctl start claude-remote-server.service
+sudo systemctl stop claude-remote-server.service
+sudo systemctl restart claude-remote-server.service
+
+# Enable/disable auto-start on boot
+sudo systemctl enable claude-remote-server.service
+sudo systemctl disable claude-remote-server.service
+
+# View logs
+sudo journalctl -u claude-remote-server.service -f
+```
+
+### Manual Installation
+
+If you skipped systemd during install, you can manually install it later:
+
+```bash
+# Copy the service file
+sudo cp ~/claude-code-anywhere/examples/claude-remote.service \
+  /etc/systemd/system/claude-remote-server.service
+
+# Edit paths if needed
+sudo nano /etc/systemd/system/claude-remote-server.service
+
+# Reload systemd
+sudo systemctl daemon-reload
+
+# Enable and start
+sudo systemctl enable claude-remote-server.service
+sudo systemctl start claude-remote-server.service
+```
+
 ## Uninstallation
 
 ```bash
@@ -186,7 +247,8 @@ cd ~/claude-code-anywhere/shim
 This will:
 1. Remove the shim script
 2. Restore `claude-original` to `claude`
-3. Return to original setup
+3. **Optionally** remove the systemd service (if installed)
+4. Return to original setup
 
 The config file (`~/.claude-remote.conf`) is preserved.
 

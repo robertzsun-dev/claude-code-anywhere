@@ -70,6 +70,57 @@ else
     exit 1
 fi
 
+# Remove systemd service (if installed)
+echo ""
+echo -e "${CYAN}4. Checking for systemd service...${NC}"
+
+SERVICE_NAME="claude-remote-server.service"
+SYSTEMD_REMOVED=false
+
+if command -v systemctl &> /dev/null && [ -f "/etc/systemd/system/$SERVICE_NAME" ]; then
+    echo -e "${YELLOW}Found systemd service: $SERVICE_NAME${NC}"
+    echo ""
+    read -p "Remove systemd service? [Y/n] " -n 1 -r
+    echo ""
+
+    if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+        echo -e "${CYAN}Removing systemd service...${NC}"
+
+        # Stop service if running
+        if systemctl is-active --quiet "$SERVICE_NAME"; then
+            echo -e "${YELLOW}  Stopping service...${NC}"
+            sudo systemctl stop "$SERVICE_NAME"
+            echo -e "${GREEN}✓ Service stopped${NC}"
+        fi
+
+        # Disable service if enabled
+        if systemctl is-enabled --quiet "$SERVICE_NAME" 2>/dev/null; then
+            echo -e "${YELLOW}  Disabling service...${NC}"
+            sudo systemctl disable "$SERVICE_NAME"
+            echo -e "${GREEN}✓ Service disabled${NC}"
+        fi
+
+        # Remove service file
+        echo -e "${YELLOW}  Removing service file...${NC}"
+        sudo rm -f "/etc/systemd/system/$SERVICE_NAME"
+
+        # Reload systemd
+        sudo systemctl daemon-reload
+
+        echo -e "${GREEN}✓ Systemd service removed${NC}"
+        SYSTEMD_REMOVED=true
+    else
+        echo -e "${YELLOW}Skipped systemd service removal${NC}"
+        echo -e "${YELLOW}To remove manually later:${NC}"
+        echo -e "${YELLOW}  sudo systemctl stop $SERVICE_NAME${NC}"
+        echo -e "${YELLOW}  sudo systemctl disable $SERVICE_NAME${NC}"
+        echo -e "${YELLOW}  sudo rm /etc/systemd/system/$SERVICE_NAME${NC}"
+        echo -e "${YELLOW}  sudo systemctl daemon-reload${NC}"
+    fi
+else
+    echo -e "${YELLOW}No systemd service found${NC}"
+fi
+
 # Summary
 echo ""
 echo "╔════════════════════════════════════════════════════════════╗"
@@ -77,6 +128,9 @@ echo "║   Uninstallation Complete!                                 ║"
 echo "╚════════════════════════════════════════════════════════════╝"
 echo ""
 echo -e "${GREEN}The original 'claude' command has been restored.${NC}"
+if [ "$SYSTEMD_REMOVED" = true ]; then
+    echo -e "${GREEN}The systemd service has been removed.${NC}"
+fi
 echo ""
 echo -e "${CYAN}The config file ${YELLOW}~/.claude-remote.conf${CYAN} was not removed.${NC}"
 echo -e "${CYAN}You can delete it manually if you no longer need it.${NC}"

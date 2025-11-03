@@ -146,6 +146,110 @@ else
     echo -e "${YELLOW}! Config already exists at: $CONFIG_FILE${NC}"
 fi
 
+# Install systemd service (optional)
+echo ""
+echo -e "${CYAN}6. Install systemd service (optional)...${NC}"
+echo -e "${YELLOW}Would you like to install the server as a systemd service?${NC}"
+echo -e "${YELLOW}This will auto-start the server on boot.${NC}"
+echo ""
+read -p "Install systemd service? [y/N] " -n 1 -r
+echo ""
+
+SYSTEMD_INSTALLED=false
+
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    echo -e "${CYAN}Installing systemd service...${NC}"
+
+    # Check if systemd is available
+    if ! command -v systemctl &> /dev/null; then
+        echo -e "${RED}✗ systemd not found on this system${NC}"
+        echo -e "${YELLOW}  Skipping systemd installation${NC}"
+    else
+        # Find node path
+        NODE_PATH=$(which node)
+
+        # Create service file
+        SERVICE_NAME="claude-remote-server.service"
+        SERVICE_FILE="/tmp/$SERVICE_NAME"
+
+        cat > "$SERVICE_FILE" << SERVICEEOF
+[Unit]
+Description=Claude Code Remote Access Server
+After=network.target
+
+[Service]
+Type=simple
+User=$USER
+WorkingDirectory=$CLAUDE_REMOTE_DIR
+ExecStart=$NODE_PATH $CLAUDE_REMOTE_DIR/server.js
+Restart=always
+RestartSec=10
+
+# Environment
+Environment=NODE_ENV=production
+Environment=HOST=0.0.0.0
+Environment=PORT=8765
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=claude-remote-server
+
+[Install]
+WantedBy=multi-user.target
+SERVICEEOF
+
+        # Install service file
+        echo -e "${YELLOW}  Installing service file (may need sudo)...${NC}"
+        sudo cp "$SERVICE_FILE" "/etc/systemd/system/$SERVICE_NAME"
+        sudo chmod 644 "/etc/systemd/system/$SERVICE_NAME"
+        rm "$SERVICE_FILE"
+
+        # Reload systemd
+        sudo systemctl daemon-reload
+        echo -e "${GREEN}✓ Service file installed${NC}"
+
+        SYSTEMD_INSTALLED=true
+
+        # Ask about enabling and starting
+        echo ""
+        read -p "Enable service to start on boot? [Y/n] " -n 1 -r
+        echo ""
+        if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+            sudo systemctl enable "$SERVICE_NAME"
+            echo -e "${GREEN}✓ Service enabled for auto-start${NC}"
+        fi
+
+        echo ""
+        read -p "Start service now? [Y/n] " -n 1 -r
+        echo ""
+        if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+            sudo systemctl start "$SERVICE_NAME"
+            sleep 2
+
+            # Check status
+            if systemctl is-active --quiet "$SERVICE_NAME"; then
+                echo -e "${GREEN}✓ Service started successfully${NC}"
+                echo -e "${GREEN}✓ Server is now running at ws://localhost:8765${NC}"
+            else
+                echo -e "${YELLOW}! Service may have failed to start${NC}"
+                echo -e "${YELLOW}  Check status with: sudo systemctl status $SERVICE_NAME${NC}"
+            fi
+        fi
+
+        echo ""
+        echo -e "${CYAN}Systemd service commands:${NC}"
+        echo -e "  Status:  ${YELLOW}sudo systemctl status $SERVICE_NAME${NC}"
+        echo -e "  Start:   ${YELLOW}sudo systemctl start $SERVICE_NAME${NC}"
+        echo -e "  Stop:    ${YELLOW}sudo systemctl stop $SERVICE_NAME${NC}"
+        echo -e "  Restart: ${YELLOW}sudo systemctl restart $SERVICE_NAME${NC}"
+        echo -e "  Logs:    ${YELLOW}sudo journalctl -u $SERVICE_NAME -f${NC}"
+    fi
+else
+    echo -e "${YELLOW}Skipped systemd installation${NC}"
+    echo -e "${YELLOW}You can start the server manually with: npm run server${NC}"
+fi
+
 # Summary
 echo ""
 echo "╔════════════════════════════════════════════════════════════╗"
@@ -155,14 +259,23 @@ echo ""
 echo -e "${GREEN}The 'claude' command will now automatically connect to the session server!${NC}"
 echo ""
 echo -e "${CYAN}Next steps:${NC}"
-echo -e "  1. Start the server: ${YELLOW}cd $CLAUDE_REMOTE_DIR && npm run server${NC}"
-echo -e "  2. Use claude normally: ${YELLOW}claude${NC}"
-echo -e "  3. Connect remotely: ${YELLOW}cd $CLAUDE_REMOTE_DIR && npm run client${NC}"
+if [ "$SYSTEMD_INSTALLED" = true ]; then
+    echo -e "  1. Server is running as systemd service!"
+    echo -e "  2. Use claude normally: ${YELLOW}claude${NC}"
+    echo -e "  3. Connect remotely: ${YELLOW}cd $CLAUDE_REMOTE_DIR && npm run client${NC}"
+else
+    echo -e "  1. Start the server: ${YELLOW}cd $CLAUDE_REMOTE_DIR && npm run server${NC}"
+    echo -e "  2. Use claude normally: ${YELLOW}claude${NC}"
+    echo -e "  3. Connect remotely: ${YELLOW}cd $CLAUDE_REMOTE_DIR && npm run client${NC}"
+fi
 echo ""
 echo -e "${CYAN}Configuration:${NC}"
 echo -e "  Config file: ${YELLOW}$CONFIG_FILE${NC}"
 echo -e "  Original claude: ${YELLOW}$CLAUDE_BACKUP${NC}"
 echo -e "  Wrapper: ${YELLOW}$CLAUDE_REAL${NC}"
+if [ "$SYSTEMD_INSTALLED" = true ]; then
+    echo -e "  Systemd service: ${YELLOW}claude-remote-server.service${NC}"
+fi
 echo ""
 echo -e "${CYAN}Behavior:${NC}"
 echo -e "  - If server is running → Uses remote access wrapper"

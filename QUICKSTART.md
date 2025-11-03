@@ -19,7 +19,54 @@ cd claude-code-anywhere
 npm install
 ```
 
-## 3-Step Setup
+## Quick Start Options
+
+**Option A: Seamless Mode (Recommended)** - Install once, use `claude` normally
+**Option B: Manual Mode** - Explicitly start wrapper for each session
+
+---
+
+## Option A: Seamless Mode (Recommended)
+
+The easiest way! Install once and forget about it.
+
+### 1. Install Seamless Wrapper
+
+```bash
+cd shim
+./install.sh
+```
+
+During installation, you'll be asked:
+- **Install systemd service?** [y/N] - Answer **y** for auto-start on boot
+- **Enable on boot?** [Y/n] - Answer **Y** (default)
+- **Start now?** [Y/n] - Answer **Y** (default)
+
+### 2. Use Claude Normally!
+
+```bash
+claude
+# → Automatically wrapped and remotely accessible!
+```
+
+### 3. Connect Remotely (Optional)
+
+```bash
+npm run client
+node client.js <session-id>
+```
+
+**That's it!** The server auto-starts on boot, and every `claude` session is remotely accessible.
+
+See [SEAMLESS-MODE.md](SEAMLESS-MODE.md) for full documentation.
+
+---
+
+## Option B: Manual Mode
+
+For more control over when sessions are remotely accessible.
+
+### 3-Step Setup
 
 ### Step 1: Start the Server
 
