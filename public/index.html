@@ -1245,7 +1245,6 @@
                 cursorBlink: true,
                 fontSize: 14,
                 fontFamily: 'Monaco, Courier New, monospace',
-                rendererType: 'dom',  // Use DOM renderer instead of canvas for iOS momentum scrolling
                 theme: {
                     background: '#000000',
                     foreground: '#ffffff',
@@ -1278,33 +1277,6 @@
 
             term.loadAddon(new WebLinksAddon.WebLinksAddon());
             term.open(document.getElementById('terminal'));
-
-            // Force iOS momentum scrolling on DOM-rendered viewport
-            setTimeout(() => {
-                const viewport = document.querySelector('#terminal .xterm-viewport');
-                const screen = document.querySelector('#terminal .xterm-screen');
-
-                if (viewport) {
-                    // Remove any event listeners xterm.js added
-                    const newViewport = viewport.cloneNode(true);
-                    viewport.parentNode.replaceChild(newViewport, viewport);
-
-                    // Apply iOS momentum scrolling properties
-                    newViewport.style.cssText = `
-                        overflow-y: scroll !important;
-                        overflow-x: hidden !important;
-                        -webkit-overflow-scrolling: touch !important;
-                        overscroll-behavior: contain !important;
-                        position: relative !important;
-                        height: 100% !important;
-                    `;
-
-                    // Ensure content is taller than viewport for scrolling
-                    if (screen) {
-                        screen.style.minHeight = 'max-content';
-                    }
-                }
-            }, 100);
 
             // Debug: log terminal dimensions after opening
             console.log('Terminal initialized:', {
