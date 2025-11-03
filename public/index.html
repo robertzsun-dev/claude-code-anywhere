@@ -1389,10 +1389,6 @@
 
             // Only rebuild DOM if sessions actually changed (add/remove/metadata change)
             if (sessionStateKey !== lastSessionsState) {
-                console.log('[Focus Debug] Session state changed, rebuilding DOM');
-                console.log('[Focus Debug] Old state:', lastSessionsState);
-                console.log('[Focus Debug] New state:', sessionStateKey);
-                console.log('[Focus Debug] Sessions:', sessions);
                 lastSessionsState = sessionStateKey;
 
                 // Generate new HTML (without active class initially)
@@ -1883,8 +1879,21 @@
         // Add event listener for Start New Session button
         document.getElementById('start-session-btn').addEventListener('click', openFileBrowser);
 
-        // Auto-refresh session list
-        setInterval(loadSessions, 10000); // Refresh every 10 seconds
+        // Auto-refresh session list (but only when terminal doesn't have focus)
+        setInterval(() => {
+            // Check if terminal has focus
+            const activeElement = document.activeElement;
+            const terminalHasFocus = activeElement && (
+                activeElement.closest('.xterm') ||
+                activeElement.classList.contains('xterm') ||
+                activeElement.closest('#terminal')
+            );
+
+            // Only refresh if terminal doesn't have focus
+            if (!terminalHasFocus) {
+                loadSessions();
+            }
+        }, 10000); // Check every 10 seconds
 
         // Initial load
         loadSessions();
