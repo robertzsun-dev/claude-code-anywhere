@@ -19,7 +19,9 @@ const __dirname = dirname(__filename);
 
 // Auto-detect protocol based on cert files
 const projectRoot = join(__dirname, '..');
-const USE_HTTPS = existsSync(join(projectRoot, 'cert.pem')) && existsSync(join(projectRoot, 'key.pem'));
+const certPath = join(projectRoot, 'cert.pem');
+const keyPath = join(projectRoot, 'key.pem');
+const USE_HTTPS = existsSync(certPath) && existsSync(keyPath);
 const DEFAULT_PROTOCOL = USE_HTTPS ? 'wss' : 'ws';
 const SERVER_URL = process.env.CLAUDE_REMOTE_SERVER || `${DEFAULT_PROTOCOL}://localhost:8085`;
 const SEAMLESS_MODE = process.env.CLAUDE_SEAMLESS_MODE === 'true';

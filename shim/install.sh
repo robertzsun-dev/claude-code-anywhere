@@ -160,7 +160,8 @@ if [ ! -f "$CONFIG_FILE" ]; then
 export PATH="/usr/local/bin:\$PATH"
 
 # Server URL (change this for remote access)
-export CLAUDE_REMOTE_SERVER=ws://localhost:8085
+# Leave commented to enable auto-detection based on cert files (wss:// vs ws://)
+# export CLAUDE_REMOTE_SERVER=ws://localhost:8085
 
 # Auto-connect to server (set to false to disable automatic wrapping)
 export CLAUDE_AUTO_CONNECT=true
