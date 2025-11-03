@@ -415,6 +415,28 @@
             transform: scale(0.95);
         }
 
+        #scroll-to-bottom-btn {
+            padding: 0.25rem 0.5rem;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 500;
+            border-radius: 4px;
+            transition: all 0.2s;
+            line-height: 1;
+        }
+
+        #scroll-to-bottom-btn:hover {
+            background: rgba(255, 255, 255, 0.15);
+            border-color: rgba(255, 255, 255, 0.3);
+        }
+
+        #scroll-to-bottom-btn:active {
+            transform: scale(0.95);
+        }
+
         @keyframes pulse {
             0%, 100% {
                 opacity: 1;
@@ -786,7 +808,10 @@
             <span id="status-text">Disconnected</span>
             <button id="reconnect-btn">Reconnect</button>
         </div>
-        <div id="session-stats"></div>
+        <div style="display: flex; align-items: center; gap: 1rem;">
+            <div id="session-stats"></div>
+            <button id="scroll-to-bottom-btn" title="Scroll to Bottom">↓</button>
+        </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
@@ -1259,6 +1284,7 @@
         const statusDot = document.getElementById('status-dot');
         const statusText = document.getElementById('status-text');
         const reconnectBtn = document.getElementById('reconnect-btn');
+        const scrollToBottomBtn = document.getElementById('scroll-to-bottom-btn');
         const sessionInfo = document.getElementById('session-info');
         const sessionStats = document.getElementById('session-stats');
 
@@ -1280,6 +1306,14 @@
             if (currentSession) {
                 console.log('[Reconnect] Reconnecting to session:', currentSession);
                 connectToSession(currentSession);
+            }
+        });
+
+        // Scroll to bottom button handler
+        scrollToBottomBtn.addEventListener('click', () => {
+            if (term) {
+                term.scrollToBottom();
+                console.log('[Scroll] Scrolled to bottom');
             }
         });
 
