@@ -300,7 +300,9 @@
         }
 
         #terminal .xterm-viewport {
-            overflow: hidden !important;
+            overflow-y: scroll !important;
+            overflow-x: hidden !important;
+            -webkit-overflow-scrolling: touch;
         }
 
         #terminal .xterm-screen canvas {
