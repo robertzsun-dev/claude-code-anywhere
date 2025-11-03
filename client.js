@@ -180,8 +180,11 @@ async function connectToSession(sessionId, serverUrl) {
   function appendToTerminal(data) {
     if (!terminal) return;
 
-    const currentContent = terminal.getContent();
-    terminal.setContent(currentContent + data);
+    // Strip ANSI escape codes for blessed compatibility
+    const stripped = data.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
+
+    // Write directly without duplication
+    terminal.insertBottom(stripped.split('\n'));
     terminal.setScrollPerc(100); // Auto-scroll to bottom
     screen.render();
   }
@@ -211,8 +214,8 @@ async function connectToSession(sessionId, serverUrl) {
     });
     screen.append(statusBar);
 
-    // Terminal output area (using box instead of log to avoid duplication)
-    terminal = blessed.box({
+    // Terminal output area
+    terminal = blessed.log({
       top: 1,
       left: 0,
       width: '100%',
@@ -235,8 +238,7 @@ async function connectToSession(sessionId, serverUrl) {
       style: {
         bg: 'black',
         fg: 'white'
-      },
-      content: ''
+      }
     });
     screen.append(terminal);
 
