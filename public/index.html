@@ -1589,9 +1589,21 @@
                     break;
 
                 case 'exit':
+                    console.log('[Session] Session exited, disabling auto-reconnect');
+                    shouldReconnect = false; // Don't reconnect when session ends normally
+
+                    // Clear any pending reconnect timer
+                    if (reconnectTimer) {
+                        clearTimeout(reconnectTimer);
+                        reconnectTimer = null;
+                    }
+
                     if (term) {
                         term.write(`\r\n\x1b[31m[Session ended with code ${message.code}]\x1b[0m\r\n`);
                     }
+                    // Update status
+                    statusDot.className = 'status-dot disconnected';
+                    statusText.textContent = 'Session ended';
                     break;
 
                 case 'wrapper-disconnected':
