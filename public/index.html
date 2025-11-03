@@ -761,7 +761,7 @@
         let reconnectTimer = null;
         let reconnectAttempts = 0;
         let maxReconnectAttempts = 10;
-        let shouldReconnect = true;
+        let shouldReconnect = false; // Disabled auto-reconnect - causes focus loss issues
 
         // Register service worker for PWA
         if ('serviceWorker' in navigator) {
@@ -1454,7 +1454,7 @@
             }
 
             currentSession = sessionId;
-            shouldReconnect = true; // Enable auto-reconnect for this session
+            // shouldReconnect disabled globally to prevent focus loss
 
             // Update UI
             document.querySelectorAll('.session-item').forEach(item => {
@@ -1518,32 +1518,9 @@
                     statusDot.className = 'status-dot disconnected';
                 }
 
-                // Auto-reconnect if enabled and we haven't exceeded max attempts
-                if (shouldReconnect && reconnectAttempts < maxReconnectAttempts) {
-                    const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 10000); // Exponential backoff, max 10s
-
-                    // Only update status text if it's different to prevent focus loss
-                    if (statusText.textContent !== 'Reconnecting...') {
-                        statusText.textContent = 'Reconnecting...';
-                    }
-
-                    reconnectTimer = setTimeout(() => {
-                        reconnectAttempts++;
-                        connectToSession(currentSession, true);
-                    }, delay);
-                } else if (reconnectAttempts >= maxReconnectAttempts) {
-                    if (statusText.textContent !== 'Connection failed - tap to retry') {
-                        statusText.textContent = 'Connection failed - tap to retry';
-                        statusText.style.cursor = 'pointer';
-                        statusText.onclick = () => {
-                            reconnectAttempts = 0;
-                            connectToSession(currentSession, true);
-                        };
-                    }
-                } else {
-                    if (statusText.textContent !== 'Disconnected') {
-                        statusText.textContent = 'Disconnected';
-                    }
+                // Show disconnected message (auto-reconnect disabled to prevent focus loss)
+                if (statusText.textContent !== 'Disconnected - reload page to reconnect') {
+                    statusText.textContent = 'Disconnected - reload page to reconnect';
                 }
             };
 
@@ -1927,9 +1904,8 @@
             if (!document.hidden && currentSession) {
                 // Page became visible - check connection
                 if (!ws || ws.readyState !== WebSocket.OPEN) {
-                    console.log('[Visibility] Page visible but disconnected - reconnecting immediately');
-                    reconnectAttempts = 0; // Reset attempts for manual reconnect
-                    connectToSession(currentSession, true);
+                    console.log('[Visibility] Page visible but disconnected - user should reload');
+                    // Auto-reconnect disabled to prevent focus loss issues
                 }
             }
         });
@@ -1938,22 +1914,22 @@
         window.addEventListener('pageshow', (event) => {
             // event.persisted indicates the page was loaded from cache (back/forward navigation)
             if (event.persisted && currentSession) {
-                console.log('[PageShow] Page restored from cache - checking connection');
-                if (!ws || ws.readyState !== WebSocket.OPEN) {
-                    reconnectAttempts = 0;
-                    connectToSession(currentSession, true);
-                }
+                console.log('[PageShow] Page restored from cache - user should reload');
+                // Auto-reconnect disabled to prevent focus loss issues
             }
         });
 
         // Handle online/offline events
         window.addEventListener('online', () => {
-            console.log('[Network] Back online');
+            console.log('[Network] Back online - user should reload if disconnected');
+            // Auto-reconnect disabled to prevent focus loss issues
+            /*
             if (currentSession && (!ws || ws.readyState !== WebSocket.OPEN)) {
                 console.log('[Network] Reconnecting after network restored');
                 reconnectAttempts = 0;
                 connectToSession(currentSession, true);
             }
+            */
         });
 
         window.addEventListener('offline', () => {
