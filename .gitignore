@@ -5,3 +5,7 @@ node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Cache files
+.channels_cache_v2.json
+.users_cache.json
