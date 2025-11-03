@@ -74,6 +74,7 @@
 
         #install-btn,
         #notification-toggle,
+        #test-notification-btn,
         #debug-btn {
             background: transparent;
             border: 1px solid rgba(255, 255, 255, 0.1);
@@ -91,6 +92,7 @@
 
         #install-btn:hover,
         #notification-toggle:hover,
+        #test-notification-btn:hover,
         #debug-btn:hover {
             background: rgba(255, 255, 255, 0.05);
             border-color: rgba(255, 255, 255, 0.2);
@@ -99,6 +101,7 @@
 
         #install-btn:active,
         #notification-toggle:active,
+        #test-notification-btn:active,
         #debug-btn:active {
             transform: scale(0.95);
         }
@@ -709,6 +712,9 @@
             <button id="notification-toggle" title="Enable notifications" onclick="requestNotificationPermission()">
                 🔔
             </button>
+            <button id="test-notification-btn" title="Test notification" onclick="testNotificationNow()" style="display: flex;">
+                🔔✨
+            </button>
             <button id="debug-btn" title="Debug notifications" onclick="showDebugPanel()" style="display: flex;">
                 🐛
             </button>
@@ -1055,52 +1061,120 @@
         }
 
         // Detect if Claude is waiting for input by analyzing terminal output
+        let lastSignificantOutput = '';
+        let noOutputTimer = null;
+
         function detectWaitingForInput(data) {
+            // Store last output for pattern matching
+            lastSignificantOutput = (lastSignificantOutput + data).slice(-500); // Keep last 500 chars
+
             const text = data.toLowerCase();
+            const fullText = lastSignificantOutput.toLowerCase();
 
             // Common patterns that indicate Claude is waiting for user input
             const waitingPatterns = [
+                // Direct prompts
                 'press enter',
                 'continue?',
                 'proceed?',
                 'yes/no',
                 'y/n',
-                'choose an option',
-                'select:',
-                'your choice:',
-                '? ',  // Question mark prompts
-                'waiting for',
-                'enter to continue',
-                'press any key',
-                'would you like to',
-                'do you want to',
-                'should i',
-                'may i',
-                'okay to',
-                'confirm:',
-                'approve:',
                 '[y/n]',
                 '(y/n)',
+
+                // Questions
+                'would you like',
+                'do you want',
+                'should i',
+                'may i',
+                'can i',
+                'okay to',
+                'ok to',
+
+                // Confirmations
+                'confirm:',
+                'approve:',
+                'allow me',
+                'permission to',
+
+                // Input requests
                 'type your',
                 'please enter',
-                'input:'
+                'input:',
+                'enter to',
+                'waiting for',
+
+                // Tool/command requests
+                'run this tool',
+                'execute this',
+                'request approval',
+                'needs approval'
             ];
 
-            const hasWaitingPattern = waitingPatterns.some(pattern => text.includes(pattern));
+            const hasWaitingPattern = waitingPatterns.some(pattern => fullText.includes(pattern));
 
-            // Also detect if output has stopped for a while (potential prompt)
-            const timeSinceLastOutput = Date.now() - lastOutputTime;
-            const outputStalled = timeSinceLastOutput > 2000; // 2 seconds of no output
+            // Detect Claude Code specific patterns (tool use blocks, questions)
+            const hasToolUse = fullText.includes('<function_calls>') || fullText.includes('tool use');
+            const hasQuestion = fullText.includes('?') && text.trim().endsWith('?');
 
-            if (hasWaitingPattern || (outputStalled && text.trim().length > 0)) {
-                if (!waitingForInput) {
-                    waitingForInput = true;
-                    showNotification(
-                        'Claude needs your attention',
-                        'Claude Code is waiting for your input or response'
-                    );
-                }
+            // Clear any existing timer
+            if (noOutputTimer) {
+                clearTimeout(noOutputTimer);
             }
+
+            // Set a timer to check if output has stopped (potential prompt)
+            noOutputTimer = setTimeout(() => {
+                // If we haven't received new output in 3 seconds and there's content
+                if (lastSignificantOutput.trim().length > 20 && !waitingForInput) {
+                    const recent = lastSignificantOutput.slice(-200).toLowerCase();
+
+                    // Check if it looks like a prompt (ends with ?, has tool use, etc)
+                    if (recent.includes('?') || recent.includes('(y/n)') ||
+                        recent.includes('[y/n]') || recent.includes('approve')) {
+                        console.log('[Notification] Detected stalled output with prompt pattern');
+                        triggerNotification();
+                    }
+                }
+            }, 3000); // 3 seconds of no output
+
+            // Immediate trigger for clear waiting patterns
+            if (hasWaitingPattern || (hasToolUse && hasQuestion)) {
+                console.log('[Notification] Detected waiting pattern:', { hasWaitingPattern, hasToolUse, hasQuestion });
+                triggerNotification();
+            }
+        }
+
+        function triggerNotification() {
+            if (!waitingForInput && notificationsEnabled) {
+                waitingForInput = true;
+                showNotification(
+                    'Claude needs your attention',
+                    'Claude Code is waiting for your input or response'
+                );
+            }
+        }
+
+        // Manual test notification function
+        function testNotificationNow() {
+            console.log('[Test] Manual notification trigger');
+            if (!notificationsEnabled || Notification.permission !== 'granted') {
+                alert('❌ Notifications not enabled\n\nPlease enable notifications first by tapping the 🔔 button.');
+                return;
+            }
+
+            // Temporarily reset waiting flag to allow notification
+            const wasWaiting = waitingForInput;
+            waitingForInput = false;
+
+            showNotification(
+                '🔔 Test Notification',
+                'If you see this, notifications are working perfectly!'
+            );
+
+            // Reset flag after a moment
+            setTimeout(() => {
+                waitingForInput = wasWaiting;
+            }, 1000);
         }
 
         // Check notification permission on load
