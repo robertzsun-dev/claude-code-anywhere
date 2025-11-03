@@ -72,6 +72,7 @@
             font-variant-numeric: tabular-nums;
         }
 
+        #install-btn,
         #notification-toggle {
             background: transparent;
             border: 1px solid rgba(255, 255, 255, 0.1);
@@ -87,12 +88,14 @@
             transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
         }
 
+        #install-btn:hover,
         #notification-toggle:hover {
             background: rgba(255, 255, 255, 0.05);
             border-color: rgba(255, 255, 255, 0.2);
             transform: scale(1.05);
         }
 
+        #install-btn:active,
         #notification-toggle:active {
             transform: scale(0.95);
         }
@@ -101,6 +104,91 @@
             background: rgba(249, 115, 22, 0.15);
             border-color: rgba(249, 115, 22, 0.3);
             color: #fb923c;
+        }
+
+        /* iOS Install Prompt Modal */
+        .install-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(8px);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .install-modal.visible {
+            display: flex;
+        }
+
+        .install-modal-content {
+            background: #1a1a1a;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 2rem;
+            max-width: 400px;
+            width: 100%;
+            text-align: center;
+        }
+
+        .install-modal h3 {
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+            color: #fafafa;
+        }
+
+        .install-modal p {
+            font-size: 0.9375rem;
+            color: #a1a1aa;
+            line-height: 1.6;
+            margin-bottom: 1.5rem;
+        }
+
+        .install-steps {
+            text-align: left;
+            margin: 1.5rem 0;
+            padding: 1rem;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 8px;
+        }
+
+        .install-step {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+            font-size: 0.875rem;
+            color: #e5e5e5;
+        }
+
+        .install-step:last-child {
+            margin-bottom: 0;
+        }
+
+        .install-step-icon {
+            font-size: 1.5rem;
+            flex-shrink: 0;
+        }
+
+        .install-modal-close {
+            background: #2563eb;
+            border: none;
+            color: white;
+            padding: 0.75rem 2rem;
+            border-radius: 8px;
+            font-size: 0.9375rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .install-modal-close:hover {
+            background: #1d4ed8;
         }
 
         #main {
@@ -612,6 +700,9 @@
             <h1>Claude Code Remote Access</h1>
         </div>
         <div class="header-right">
+            <button id="install-btn" title="Install app" onclick="showInstallPrompt()" style="display: none;">
+                📲
+            </button>
             <button id="notification-toggle" title="Enable notifications" onclick="requestNotificationPermission()">
                 🔔
             </button>
@@ -672,6 +763,89 @@
                     console.log('Service Worker registration failed:', error);
                 });
         }
+
+        // PWA Install Prompt
+        let deferredInstallPrompt = null;
+        let installBtn = null;
+        let installModal = null;
+
+        // Check if already installed (running in standalone mode)
+        function isStandalone() {
+            return window.matchMedia('(display-mode: standalone)').matches ||
+                   window.navigator.standalone ||
+                   document.referrer.includes('android-app://');
+        }
+
+        // Detect if iOS
+        function isIOS() {
+            return /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+        }
+
+        // Show install button if not already installed
+        function updateInstallButton() {
+            if (!installBtn) {
+                installBtn = document.getElementById('install-btn');
+            }
+            if (installBtn) {
+                if (!isStandalone()) {
+                    installBtn.style.display = 'flex';
+                } else {
+                    installBtn.style.display = 'none';
+                }
+            }
+        }
+
+        // Capture the beforeinstallprompt event (Android/Chrome)
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredInstallPrompt = e;
+            updateInstallButton();
+        });
+
+        // Show install prompt
+        function showInstallPrompt() {
+            if (!installModal) {
+                installModal = document.getElementById('install-modal');
+            }
+            if (isIOS()) {
+                // Show iOS instructions modal
+                if (installModal) {
+                    installModal.classList.add('visible');
+                }
+            } else if (deferredInstallPrompt) {
+                // Show native install prompt (Android/Chrome)
+                deferredInstallPrompt.prompt();
+                deferredInstallPrompt.userChoice.then((choiceResult) => {
+                    if (choiceResult.outcome === 'accepted') {
+                        console.log('User accepted the install prompt');
+                        if (installBtn) {
+                            installBtn.style.display = 'none';
+                        }
+                    }
+                    deferredInstallPrompt = null;
+                });
+            } else {
+                // Fallback - show instructions
+                alert('To install this app:\n\n1. Open the browser menu\n2. Select "Add to Home Screen" or "Install App"');
+            }
+        }
+
+        // Close iOS install modal
+        function closeInstallModal() {
+            if (!installModal) {
+                installModal = document.getElementById('install-modal');
+            }
+            if (installModal) {
+                installModal.classList.remove('visible');
+            }
+        }
+
+        // Initialize install button after DOM loads
+        window.addEventListener('DOMContentLoaded', () => {
+            installBtn = document.getElementById('install-btn');
+            installModal = document.getElementById('install-modal');
+            updateInstallButton();
+        });
 
         // Request notification permission
         async function requestNotificationPermission() {
@@ -1370,6 +1544,31 @@
                 <button class="btn btn-secondary" onclick="closeFileBrowser()">Cancel</button>
                 <button class="btn btn-primary" onclick="selectCurrentDirectory()">Select This Directory</button>
             </div>
+        </div>
+    </div>
+
+    <!-- iOS Install Instructions Modal -->
+    <div id="install-modal" class="install-modal">
+        <div class="install-modal-content">
+            <h3>📲 Install App</h3>
+            <p>Add Claude Code Remote to your home screen for the best experience!</p>
+
+            <div class="install-steps">
+                <div class="install-step">
+                    <div class="install-step-icon">1️⃣</div>
+                    <div>Tap the <strong>Share</strong> button <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="display: inline; vertical-align: middle;"><path d="M16 5l-1.42 1.42-1.59-1.59V16h-1.98V4.83L9.42 6.42 8 5l4-4 4 4zm4 5v11c0 1.1-.9 2-2 2H6c-1.1 0-2-.9-2-2V10c0-1.1.9-2 2-2h3v2H6v11h12V10h-3V8h3c1.1 0 2 .9 2 2z"/></svg></div>
+                </div>
+                <div class="install-step">
+                    <div class="install-step-icon">2️⃣</div>
+                    <div>Select <strong>"Add to Home Screen"</strong></div>
+                </div>
+                <div class="install-step">
+                    <div class="install-step-icon">3️⃣</div>
+                    <div>Tap <strong>"Add"</strong> to confirm</div>
+                </div>
+            </div>
+
+            <button class="install-modal-close" onclick="closeInstallModal()">Got it!</button>
         </div>
     </div>
 </body>
