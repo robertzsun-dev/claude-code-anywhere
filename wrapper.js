@@ -99,7 +99,9 @@ function handleServerMessage(message) {
           args: config.args,
           hostname: os.hostname(),
           platform: os.platform(),
-          user: os.userInfo().username
+          user: os.userInfo().username,
+          cols: config.cols,
+          rows: config.rows
         }
       });
 

@@ -559,6 +559,11 @@
         function handleMessage(message) {
             switch (message.type) {
                 case 'session-attached':
+                    // Resize terminal to match PTY dimensions
+                    if (message.metadata && message.metadata.cols && message.metadata.rows) {
+                        term.resize(message.metadata.cols, message.metadata.rows);
+                    }
+
                     // Display history
                     if (message.history && message.history.length > 0) {
                         message.history.forEach(item => {
@@ -575,6 +580,10 @@
                     break;
 
                 case 'metadata':
+                    // Resize terminal if dimensions changed
+                    if (message.data && message.data.cols && message.data.rows) {
+                        term.resize(message.data.cols, message.data.rows);
+                    }
                     updateSessionInfo(message.data);
                     break;
 
