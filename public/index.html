@@ -1445,6 +1445,12 @@
                 return;
             }
 
+            // If switching back to the same session that's disconnected, treat as reconnect
+            if (!isReconnect && currentSession === sessionId && ws && ws.readyState !== WebSocket.OPEN) {
+                console.log('[Connect] Switching to same session that is disconnected, reconnecting');
+                isReconnect = true;
+            }
+
             // If switching sessions (not reconnect), dispose terminal and prevent reconnect
             if (!isReconnect && currentSession !== sessionId) {
                 console.log('[Connect] Switching sessions, disposing terminal');
@@ -1481,6 +1487,8 @@
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             const wsUrl = `${protocol}//${window.location.host}?role=viewer&session=${sessionId}`;
 
+            // Store the session ID this WebSocket is connected to
+            const thisConnectionSessionId = sessionId;
             ws = new WebSocket(wsUrl);
 
             ws.onopen = () => {
@@ -1496,6 +1504,11 @@
             };
 
             ws.onmessage = (event) => {
+                // Ignore messages from old sessions (race condition after switching)
+                if (currentSession !== thisConnectionSessionId) {
+                    console.log('[WebSocket] Ignoring message from old session:', thisConnectionSessionId);
+                    return;
+                }
                 const message = JSON.parse(event.data);
                 handleMessage(message);
             };
