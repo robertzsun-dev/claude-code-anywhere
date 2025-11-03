@@ -531,7 +531,10 @@
                 bottom: 0;
                 z-index: 50;
                 box-shadow: 2px 0 8px rgba(0, 0, 0, 0.3);
-                padding-top: env(safe-area-inset-top);
+            }
+
+            #sidebar h2 {
+                padding-top: calc(1rem + env(safe-area-inset-top));
             }
 
             #header {
