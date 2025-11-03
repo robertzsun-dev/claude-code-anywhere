@@ -1546,12 +1546,21 @@
                         detectWaitingForInput('', true); // Pass empty string but trigger check on existing buffer
                     }
 
-                    // Always scroll to bottom after loading session
-                    setTimeout(() => {
-                        if (term) {
-                            term.scrollToBottom();
-                        }
-                    }, 100);
+                    // Always scroll to bottom after loading session (multiple times to handle large content)
+                    if (term) {
+                        // Immediate scroll
+                        term.scrollToBottom();
+
+                        // Scroll again after DOM updates
+                        requestAnimationFrame(() => {
+                            if (term) term.scrollToBottom();
+                        });
+
+                        // Final scroll for large content (500ms delay)
+                        setTimeout(() => {
+                            if (term) term.scrollToBottom();
+                        }, 500);
+                    }
 
                     updateSessionInfo(message.metadata);
                     break;
