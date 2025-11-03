@@ -1282,13 +1282,27 @@
             // Force iOS momentum scrolling on DOM-rendered viewport
             setTimeout(() => {
                 const viewport = document.querySelector('#terminal .xterm-viewport');
+                const screen = document.querySelector('#terminal .xterm-screen');
+
                 if (viewport) {
-                    viewport.style.cssText = `
+                    // Remove any event listeners xterm.js added
+                    const newViewport = viewport.cloneNode(true);
+                    viewport.parentNode.replaceChild(newViewport, viewport);
+
+                    // Apply iOS momentum scrolling properties
+                    newViewport.style.cssText = `
                         overflow-y: scroll !important;
                         overflow-x: hidden !important;
                         -webkit-overflow-scrolling: touch !important;
-                        overscroll-behavior: none !important;
+                        overscroll-behavior: contain !important;
+                        position: relative !important;
+                        height: 100% !important;
                     `;
+
+                    // Ensure content is taller than viewport for scrolling
+                    if (screen) {
+                        screen.style.minHeight = 'max-content';
+                    }
                 }
             }, 100);
 
