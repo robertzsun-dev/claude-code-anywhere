@@ -758,8 +758,7 @@
         let notificationsEnabled = false;
         let lastOutputTime = Date.now();
         let waitingForInput = false;
-        let reconnectTimer = null;
-        let isReconnecting = false;
+        // No auto-reconnect - user must click session to reconnect
 
         // Register service worker for PWA
         if ('serviceWorker' in navigator) {
@@ -1438,40 +1437,23 @@
         }
 
         // Connect to session
-        function connectToSession(sessionId, isReconnect = false) {
-            // Prevent reconnect loops
-            if (isReconnecting && isReconnect) {
-                console.log('[Connect] Already reconnecting, skipping');
-                return;
-            }
+        function connectToSession(sessionId) {
+            console.log('[Connect] Connecting to session:', sessionId);
 
-            // If switching back to the same session that's disconnected, treat as reconnect
-            if (!isReconnect && currentSession === sessionId && ws && ws.readyState !== WebSocket.OPEN) {
-                console.log('[Connect] Switching to same session that is disconnected, reconnecting');
-                isReconnect = true;
-            }
-
-            // If switching sessions (not reconnect), dispose terminal and prevent reconnect
-            if (!isReconnect && currentSession !== sessionId) {
+            // If switching to a different session, dispose terminal
+            if (currentSession !== sessionId && term) {
                 console.log('[Connect] Switching sessions, disposing terminal');
-                // Clear current session to prevent reconnect of old session
-                const oldSession = currentSession;
-                currentSession = null;
+                term.dispose();
+                term = null;
+            }
 
-                // Dispose old terminal
-                if (term) {
-                    term.dispose();
-                    term = null;
-                }
-
-                // Close existing connection (won't trigger reconnect because currentSession is null)
-                if (ws) {
-                    ws.close();
-                }
+            // Close existing connection
+            if (ws) {
+                ws.close();
+                ws = null;
             }
 
             currentSession = sessionId;
-            isReconnecting = isReconnect;
 
             // Update UI
             document.querySelectorAll('.session-item').forEach(item => {
@@ -1487,24 +1469,19 @@
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             const wsUrl = `${protocol}//${window.location.host}?role=viewer&session=${sessionId}`;
 
-            // Store the session ID this WebSocket is connected to
+            // Store the session ID this WebSocket is connected to (prevents output bleed)
             const thisConnectionSessionId = sessionId;
             ws = new WebSocket(wsUrl);
 
             ws.onopen = () => {
-                console.log('[WebSocket] Connected', { sessionId, isReconnect });
-                if (statusDot.className !== 'status-dot connected') {
-                    statusDot.className = 'status-dot connected';
-                }
-                if (statusText.textContent !== 'Connected') {
-                    statusText.textContent = 'Connected';
-                }
+                console.log('[WebSocket] Connected to session:', sessionId);
+                statusDot.className = 'status-dot connected';
+                statusText.textContent = 'Connected';
                 updateSessionInfo();
-                isReconnecting = false; // Clear reconnecting flag on successful connection
             };
 
             ws.onmessage = (event) => {
-                // Ignore messages from old sessions (race condition after switching)
+                // Ignore messages from old sessions (prevents output bleed when switching)
                 if (currentSession !== thisConnectionSessionId) {
                     console.log('[WebSocket] Ignoring message from old session:', thisConnectionSessionId);
                     return;
@@ -1514,37 +1491,14 @@
             };
 
             ws.onclose = (event) => {
-                console.log('[WebSocket] Closed', {
-                    sessionId,
-                    code: event.code,
-                    reason: event.reason,
-                    wasClean: event.wasClean
-                });
-
-                // Only update status if it's actually changing to prevent focus loss
-                if (statusDot.className !== 'status-dot disconnected') {
-                    statusDot.className = 'status-dot disconnected';
-                }
-                if (statusText.textContent !== 'Reconnecting...') {
-                    statusText.textContent = 'Reconnecting...';
-                }
-
-                // Reconnect immediately (with small delay to avoid hammering)
-                // Terminal won't be reinitialized, so no focus loss
-                if (currentSession && !isReconnecting) {
-                    isReconnecting = true;
-                    setTimeout(() => {
-                        console.log('[WebSocket] Reconnecting to session:', currentSession);
-                        connectToSession(currentSession, true);
-                    }, 1000);
-                }
+                console.log('[WebSocket] Closed:', event.code, event.reason);
+                statusDot.className = 'status-dot disconnected';
+                statusText.textContent = 'Disconnected - click session to reconnect';
+                // No auto-reconnect - user must click session
             };
 
             ws.onerror = (error) => {
                 console.error('[WebSocket] Error:', error);
-                if (term && !isReconnect) {
-                    term.write('\r\n\x1b[31m[Error: Connection failed]\x1b[0m\r\n');
-                }
             };
         }
 
@@ -1562,48 +1516,43 @@
                         noOutputTimer = null;
                     }
 
-                    // Initialize terminal with PTY dimensions (only if not already initialized)
-                    if (!term) {
-                        if (message.metadata && message.metadata.cols && message.metadata.rows) {
-                            initTerminal(message.metadata.cols, message.metadata.rows);
-                        } else {
-                            // Fallback to default dimensions if not provided
-                            initTerminal(80, 24);
-                        }
-
-                        // Display history and build detection buffer (only on initial connection)
-                        if (message.history && message.history.length > 0) {
-                            let historyText = '';
-                            message.history.forEach(item => {
-                                if (item.type === 'output') {
-                                    term.write(item.data);
-                                    historyText += item.data;
-                                }
-                            });
-
-                            // Populate detection buffer with last 500 chars of history
-                            lastSignificantOutput = historyText.slice(-500);
-                            console.log('[Session] Populated detection buffer from history:', {
-                                historyLength: historyText.length,
-                                bufferLength: lastSignificantOutput.length,
-                                lastChars: lastSignificantOutput.slice(-100)
-                            });
-
-                            // Check if history ends with a prompt pattern
-                            detectWaitingForInput('', true); // Pass empty string but trigger check on existing buffer
-
-                            // Scroll to bottom after loading history (use setTimeout to ensure terminal is fully rendered)
-                            setTimeout(() => {
-                                if (term) {
-                                    term.scrollToBottom();
-                                }
-                            }, 100);
-                        }
+                    // Initialize terminal with PTY dimensions
+                    if (message.metadata && message.metadata.cols && message.metadata.rows) {
+                        initTerminal(message.metadata.cols, message.metadata.rows);
                     } else {
-                        // Terminal already exists (reconnection) - just show a reconnection message
-                        console.log('[Session] Reconnected - terminal already initialized');
-                        term.write('\r\n\x1b[32m[Reconnected]\x1b[0m\r\n');
+                        // Fallback to default dimensions if not provided
+                        initTerminal(80, 24);
                     }
+
+                    // Display history and build detection buffer
+                    if (message.history && message.history.length > 0) {
+                        let historyText = '';
+                        message.history.forEach(item => {
+                            if (item.type === 'output') {
+                                term.write(item.data);
+                                historyText += item.data;
+                            }
+                        });
+
+                        // Populate detection buffer with last 500 chars of history
+                        lastSignificantOutput = historyText.slice(-500);
+                        console.log('[Session] Populated detection buffer from history:', {
+                            historyLength: historyText.length,
+                            bufferLength: lastSignificantOutput.length,
+                            lastChars: lastSignificantOutput.slice(-100)
+                        });
+
+                        // Check if history ends with a prompt pattern
+                        detectWaitingForInput('', true); // Pass empty string but trigger check on existing buffer
+                    }
+
+                    // Always scroll to bottom after loading session
+                    setTimeout(() => {
+                        if (term) {
+                            term.scrollToBottom();
+                        }
+                    }, 100);
+
                     updateSessionInfo(message.metadata);
                     break;
 
@@ -1654,22 +1603,13 @@
                     break;
 
                 case 'exit':
-                    console.log('[Session] Session exited, preventing reconnection');
-
-                    // Clear current session to prevent reconnection
-                    currentSession = null;
-                    isReconnecting = false;
+                    console.log('[Session] Session exited');
 
                     if (term) {
                         term.write(`\r\n\x1b[31m[Session ended with code ${message.code}]\x1b[0m\r\n`);
                     }
-                    // Update status (only if changed to prevent focus loss)
-                    if (statusDot.className !== 'status-dot disconnected') {
-                        statusDot.className = 'status-dot disconnected';
-                    }
-                    if (statusText.textContent !== 'Session ended') {
-                        statusText.textContent = 'Session ended';
-                    }
+                    statusDot.className = 'status-dot disconnected';
+                    statusText.textContent = 'Session ended';
                     break;
 
                 case 'wrapper-disconnected':
@@ -1911,49 +1851,7 @@
         // Initial load
         loadSessions();
 
-        // Handle page visibility changes (iOS app backgrounding/foregrounding)
-        document.addEventListener('visibilitychange', () => {
-            console.log('[Visibility] State changed:', {
-                hidden: document.hidden,
-                visibilityState: document.visibilityState,
-                hasSession: !!currentSession,
-                wsState: ws ? ws.readyState : 'null'
-            });
-
-            if (!document.hidden && currentSession) {
-                // Page became visible - check connection
-                if (!ws || ws.readyState !== WebSocket.OPEN) {
-                    console.log('[Visibility] Page visible but disconnected - user should reload');
-                    // Auto-reconnect disabled to prevent focus loss issues
-                }
-            }
-        });
-
-        // Handle app resume (iOS specific)
-        window.addEventListener('pageshow', (event) => {
-            // event.persisted indicates the page was loaded from cache (back/forward navigation)
-            if (event.persisted && currentSession) {
-                console.log('[PageShow] Page restored from cache - user should reload');
-                // Auto-reconnect disabled to prevent focus loss issues
-            }
-        });
-
-        // Handle online/offline events
-        window.addEventListener('online', () => {
-            console.log('[Network] Back online - user should reload if disconnected');
-            // Auto-reconnect disabled to prevent focus loss issues
-            /*
-            if (currentSession && (!ws || ws.readyState !== WebSocket.OPEN)) {
-                console.log('[Network] Reconnecting after network restored');
-                reconnectAttempts = 0;
-                connectToSession(currentSession, true);
-            }
-            */
-        });
-
-        window.addEventListener('offline', () => {
-            console.log('[Network] Offline');
-        });
+        // No auto-reconnect handlers - user must click session to reconnect
     </script>
 
     <!-- File Browser Modal -->
