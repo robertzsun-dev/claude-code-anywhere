@@ -1440,17 +1440,32 @@
         // Connect to session
         function connectToSession(sessionId, isReconnect = false) {
             // Prevent reconnect loops
-            if (isReconnecting) {
+            if (isReconnecting && isReconnect) {
                 console.log('[Connect] Already reconnecting, skipping');
                 return;
             }
 
-            // Close existing connection
-            if (ws) {
-                ws.close();
+            // If switching sessions (not reconnect), dispose terminal and prevent reconnect
+            if (!isReconnect && currentSession !== sessionId) {
+                console.log('[Connect] Switching sessions, disposing terminal');
+                // Clear current session to prevent reconnect of old session
+                const oldSession = currentSession;
+                currentSession = null;
+
+                // Dispose old terminal
+                if (term) {
+                    term.dispose();
+                    term = null;
+                }
+
+                // Close existing connection (won't trigger reconnect because currentSession is null)
+                if (ws) {
+                    ws.close();
+                }
             }
 
             currentSession = sessionId;
+            isReconnecting = isReconnect;
 
             // Update UI
             document.querySelectorAll('.session-item').forEach(item => {
