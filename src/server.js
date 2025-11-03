@@ -432,11 +432,13 @@ async function handleStartSession(req, res) {
         tmuxArgs.push('-x', cols.toString(), '-y', rows.toString());
       }
 
-      // The command to run inside tmux: run wrapper with proper PATH
+      // The command to run inside tmux: run wrapper with proper environment
+      // Use -l flag to make bash a login shell, which sources .profile/.bashrc
+      // This ensures all environment variables (HOME, USER, etc.) are set
       // Add node bin directory to PATH so claude's shebang (#!/usr/bin/env node) works
       const shellCommand = `export PATH="${nodeBinDir}:$PATH"; CLAUDE_CMD=${claudeCmd} CLAUDE_SEAMLESS_MODE=true CLAUDE_REMOTE_SERVER=ws://${HOST}:${PORT} CLAUDE_COLS=${cols || 80} CLAUDE_ROWS=${rows || 24} exec ${nodePath} ${wrapperPath}`;
 
-      tmuxArgs.push('/bin/bash', '-c', shellCommand);
+      tmuxArgs.push('/bin/bash', '-l', '-c', shellCommand);
 
       console.log(`[Session] Running: tmux ${tmuxArgs.join(' ')}`);
 
