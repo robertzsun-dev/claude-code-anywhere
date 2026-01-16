@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pair Mobile Device - Claude Code Remote</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: #e0e0e0;
+            padding: 20px;
+        }
+
+        .container {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 500px;
+            width: 100%;
+            text-align: center;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        h1 {
+            font-size: 1.8rem;
+            margin-bottom: 10px;
+            color: #fff;
+        }
+
+        .subtitle {
+            color: #888;
+            margin-bottom: 30px;
+            font-size: 0.95rem;
+        }
+
+        .qr-container {
+            background: #fff;
+            padding: 20px;
+            border-radius: 15px;
+            display: inline-block;
+            margin-bottom: 25px;
+        }
+
+        #qrcode {
+            width: 200px;
+            height: 200px;
+        }
+
+        .pairing-code {
+            margin: 25px 0;
+        }
+
+        .pairing-code-label {
+            font-size: 0.85rem;
+            color: #888;
+            margin-bottom: 10px;
+        }
+
+        .pairing-code-value {
+            font-size: 2.5rem;
+            font-weight: bold;
+            letter-spacing: 8px;
+            color: #4CAF50;
+            font-family: 'Courier New', monospace;
+        }
+
+        .expiry {
+            font-size: 0.85rem;
+            color: #888;
+            margin-bottom: 20px;
+        }
+
+        .expiry-time {
+            color: #ffa726;
+            font-weight: bold;
+        }
+
+        .server-info {
+            background: rgba(0, 0, 0, 0.2);
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 20px;
+        }
+
+        .server-info-label {
+            font-size: 0.8rem;
+            color: #666;
+            margin-bottom: 5px;
+        }
+
+        .server-url {
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            color: #64b5f6;
+            word-break: break-all;
+        }
+
+        .refresh-btn {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 25px;
+            font-size: 1rem;
+            cursor: pointer;
+            margin-top: 20px;
+            transition: background 0.3s;
+        }
+
+        .refresh-btn:hover {
+            background: #45a049;
+        }
+
+        .instructions {
+            margin-top: 30px;
+            text-align: left;
+            background: rgba(0, 0, 0, 0.2);
+            padding: 20px;
+            border-radius: 10px;
+        }
+
+        .instructions h3 {
+            font-size: 1rem;
+            margin-bottom: 15px;
+            color: #fff;
+        }
+
+        .instructions ol {
+            padding-left: 20px;
+        }
+
+        .instructions li {
+            margin-bottom: 10px;
+            font-size: 0.9rem;
+            color: #aaa;
+        }
+
+        .loading {
+            color: #888;
+            font-size: 1.2rem;
+        }
+
+        .error {
+            color: #f44336;
+            background: rgba(244, 67, 54, 0.1);
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 20px;
+        }
+
+        .paired-devices {
+            margin-top: 30px;
+            text-align: left;
+        }
+
+        .paired-devices h3 {
+            font-size: 1rem;
+            margin-bottom: 15px;
+            color: #888;
+        }
+
+        .device-list {
+            list-style: none;
+        }
+
+        .device-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: rgba(0, 0, 0, 0.2);
+            padding: 12px 15px;
+            border-radius: 8px;
+            margin-bottom: 8px;
+        }
+
+        .device-name {
+            font-size: 0.9rem;
+        }
+
+        .device-meta {
+            font-size: 0.75rem;
+            color: #666;
+        }
+
+        .no-devices {
+            color: #666;
+            font-size: 0.85rem;
+            text-align: center;
+            padding: 20px;
+        }
+
+        @media (max-width: 500px) {
+            .container {
+                padding: 25px;
+            }
+
+            h1 {
+                font-size: 1.4rem;
+            }
+
+            .pairing-code-value {
+                font-size: 2rem;
+                letter-spacing: 5px;
+            }
+
+            #qrcode {
+                width: 160px;
+                height: 160px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Pair Mobile Device</h1>
+        <p class="subtitle">Connect your iPhone to receive Claude Code notifications</p>
+
+        <div id="pairing-content">
+            <p class="loading">Loading...</p>
+        </div>
+
+        <div class="instructions">
+            <h3>How to pair:</h3>
+            <ol>
+                <li>Open the Claude Remote app on your iPhone</li>
+                <li>Tap "Add Server" or the + button</li>
+                <li>Scan the QR code above, or enter the code manually</li>
+                <li>Your device will be paired and ready to receive notifications</li>
+            </ol>
+        </div>
+    </div>
+
+    <script>
+        let pairingData = null;
+        let expiryInterval = null;
+
+        async function fetchPairingCode() {
+            try {
+                const response = await fetch('/api/pair/qr', {
+                    method: 'GET'
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to get pairing code');
+                }
+
+                pairingData = await response.json();
+                renderPairing();
+                startExpiryCountdown();
+            } catch (err) {
+                document.getElementById('pairing-content').innerHTML = `
+                    <div class="error">
+                        <p>Failed to generate pairing code.</p>
+                        <p>${err.message}</p>
+                    </div>
+                    <button class="refresh-btn" onclick="fetchPairingCode()">Try Again</button>
+                `;
+            }
+        }
+
+        function renderPairing() {
+            const content = document.getElementById('pairing-content');
+            const serverUrl = window.location.origin;
+
+            // Generate QR code URL using QRServer API
+            const qrData = encodeURIComponent(pairingData.qrData);
+            const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${qrData}`;
+
+            content.innerHTML = `
+                <div class="qr-container">
+                    <img id="qrcode" src="${qrUrl}" alt="QR Code" width="200" height="200" />
+                </div>
+
+                <div class="pairing-code">
+                    <div class="pairing-code-label">Or enter this code:</div>
+                    <div class="pairing-code-value">${pairingData.pairingCode}</div>
+                </div>
+
+                <div class="expiry">
+                    Expires in: <span class="expiry-time" id="expiry-countdown">5:00</span>
+                </div>
+
+                <div class="server-info">
+                    <div class="server-info-label">Server URL</div>
+                    <div class="server-url">${serverUrl}</div>
+                </div>
+
+                <button class="refresh-btn" onclick="fetchPairingCode()">Generate New Code</button>
+            `;
+        }
+
+        function startExpiryCountdown() {
+            if (expiryInterval) {
+                clearInterval(expiryInterval);
+            }
+
+            const expiresAt = new Date(pairingData.expiresAt);
+
+            expiryInterval = setInterval(() => {
+                const now = new Date();
+                const diff = expiresAt - now;
+
+                if (diff <= 0) {
+                    clearInterval(expiryInterval);
+                    fetchPairingCode(); // Auto-refresh
+                    return;
+                }
+
+                const minutes = Math.floor(diff / 60000);
+                const seconds = Math.floor((diff % 60000) / 1000);
+                const countdown = document.getElementById('expiry-countdown');
+
+                if (countdown) {
+                    countdown.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+
+                    // Change color when less than 1 minute
+                    if (diff < 60000) {
+                        countdown.style.color = '#f44336';
+                    }
+                }
+            }, 1000);
+        }
+
+        // Start
+        fetchPairingCode();
+    </script>
+</body>
+</html>

@@ -18,6 +18,12 @@ import { join, resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import os from 'os';
 
+// Mobile app support modules
+import { InputDetector } from './detection/input-detector.js';
+import { DeviceRegistry } from './devices/device-registry.js';
+import { FCMService } from './push/fcm-service.js';
+import { createMobileRoutes } from './api/mobile-routes.js';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
@@ -30,6 +36,54 @@ const sessions = new Map();
 // Client connections: Map<clientId, {ws, sessionId, role}>
 const clients = new Map();
 
+// Mobile app infrastructure
+const deviceRegistry = new DeviceRegistry({
+  persistPath: process.env.DEVICE_REGISTRY_PATH || join(os.homedir(), '.claude-remote', 'devices.json')
+});
+const fcmService = new FCMService();
+
+// Helper to get server URL
+function getServerUrl() {
+  const protocol = USE_HTTPS ? 'https' : 'http';
+  // If bound to 0.0.0.0, try to get actual IP
+  let actualHost = HOST;
+  if (HOST === '0.0.0.0' || HOST === '::') {
+    const nets = os.networkInterfaces();
+    for (const name of Object.keys(nets)) {
+      for (const net of nets[name]) {
+        if (net.family === 'IPv4' && !net.internal) {
+          actualHost = net.address;
+          break;
+        }
+      }
+      if (actualHost !== HOST) break;
+    }
+  }
+  return `${protocol}://${actualHost}:${PORT}`;
+}
+
+// Create mobile routes handler
+const handleMobileRoute = createMobileRoutes({
+  deviceRegistry,
+  sessions,
+  fcmService,
+  getServerUrl
+});
+
+// Send push notification to subscribed devices when input is detected
+async function notifyDevicesOfWaiting(waitingInfo) {
+  if (!fcmService.isEnabled()) return;
+
+  const devices = deviceRegistry.getDevicesForSession(waitingInfo.sessionId);
+  for (const device of devices) {
+    const result = await fcmService.sendWaitingNotification(device, waitingInfo);
+    if (result.shouldRemove) {
+      // Invalid token, remove the FCM token
+      deviceRegistry.updateFcmToken(device.deviceId, null);
+    }
+  }
+}
+
 /**
  * Session structure:
  * {
@@ -38,12 +92,38 @@ const clients = new Map();
  *   lastActivity: Date,
  *   wrapperWs: WebSocket,
  *   metadata: { cwd, pid, ... },
- *   history: Array<{type, data, timestamp}>
+ *   history: Array<{type, data, timestamp}>,
+ *   inputDetector: InputDetector
  * }
  */
 
 function createSession(wrapperWs, metadata) {
   const id = crypto.randomBytes(8).toString('hex');
+
+  // Create input detector for this session
+  const inputDetector = new InputDetector(id, {
+    onWaitingDetected: (waitingInfo) => {
+      console.log(`[Session ${id}] Waiting for input:`, waitingInfo.reason);
+      // Notify subscribed mobile devices
+      notifyDevicesOfWaiting(waitingInfo);
+      // Broadcast to WebSocket viewers
+      broadcastToSession(id, {
+        type: 'waiting-for-input',
+        sessionId: id,
+        reason: waitingInfo.reason,
+        quickActions: waitingInfo.quickActions,
+        context: waitingInfo.context
+      });
+    },
+    onWaitingCleared: (info) => {
+      console.log(`[Session ${id}] Input received, waiting cleared`);
+      broadcastToSession(id, {
+        type: 'waiting-cleared',
+        sessionId: id
+      });
+    }
+  });
+
   const session = {
     id,
     created: new Date(),
@@ -51,7 +131,8 @@ function createSession(wrapperWs, metadata) {
     wrapperWs,
     metadata: metadata || {},
     history: [], // Keep last 10000 lines for new clients
-    maxHistory: 10000
+    maxHistory: 10000,
+    inputDetector
   };
 
   sessions.set(id, session);
@@ -99,6 +180,10 @@ function handleWrapperMessage(ws, clientId, message) {
       // Claude Code output (stdout/stderr)
       addToHistory(session, 'output', message.data);
       broadcastToSession(session.id, message);
+      // Process through input detector for waiting state detection
+      if (session.inputDetector) {
+        session.inputDetector.processOutput(message.data);
+      }
       break;
 
     case 'metadata':
@@ -111,6 +196,10 @@ function handleWrapperMessage(ws, clientId, message) {
       // Session ended
       console.log(`[Session] Session ${session.id} ended with code ${message.code}`);
       broadcastToSession(session.id, message);
+      // Clean up input detector
+      if (session.inputDetector) {
+        session.inputDetector.destroy();
+      }
       sessions.delete(session.id);
       break;
 
@@ -136,6 +225,11 @@ function handleViewerMessage(ws, clientId, message) {
         type: 'input',
         data: message.data
       }));
+
+      // Clear waiting state since user provided input
+      if (session.inputDetector) {
+        session.inputDetector.handleInput();
+      }
 
       // Also broadcast to other viewers
       broadcastToSession(session.id, {
@@ -541,7 +635,13 @@ if (USE_HTTPS) {
   });
 }
 
-function handleHttpRequest(req, res) {
+async function handleHttpRequest(req, res) {
+  // Handle mobile API routes first
+  if (req.url.startsWith('/api/')) {
+    const handled = await handleMobileRoute(req, res);
+    if (handled) return;
+  }
+
   // Serve web client
   if (req.url === '/' || req.url === '/index.html') {
     import('fs').then(fs => {
@@ -560,6 +660,22 @@ function handleHttpRequest(req, res) {
               res.end(data);
             }
           });
+        });
+      });
+    });
+  } else if (req.url === '/pair' || req.url === '/pair.html') {
+    // Serve pairing page for mobile app setup
+    import('fs').then(fs => {
+      import('path').then(path => {
+        const filePath = path.join(__dirname, '..', 'public', 'pair.html');
+        fs.readFile(filePath, 'utf8', (err, data) => {
+          if (err) {
+            res.writeHead(404, { 'Content-Type': 'text/plain' });
+            res.end('Pairing page not found');
+          } else {
+            res.writeHead(200, { 'Content-Type': 'text/html' });
+            res.end(data);
+          }
         });
       });
     });
@@ -618,6 +734,16 @@ httpServer.listen(PORT, HOST, () => {
 // Graceful shutdown
 process.on('SIGINT', () => {
   console.log('\n[Server] Shutting down...');
+
+  // Clean up input detectors for all sessions
+  for (const session of sessions.values()) {
+    if (session.inputDetector) {
+      session.inputDetector.destroy();
+    }
+  }
+
+  // Clean up device registry (persists devices to disk)
+  deviceRegistry.destroy();
 
   // Notify all clients
   for (const [clientId, client] of clients.entries()) {

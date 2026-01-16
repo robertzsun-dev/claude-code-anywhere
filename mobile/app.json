@@ -1,0 +1,49 @@
+{
+  "expo": {
+    "name": "Claude Remote",
+    "slug": "claude-remote",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1a1a2e"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.clauderemote.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Camera is used to scan QR codes for server pairing"
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#1a1a2e"
+      },
+      "package": "com.clauderemote.app",
+      "permissions": ["CAMERA", "VIBRATE", "RECEIVE_BOOT_COMPLETED"]
+    },
+    "plugins": [
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#4CAF50"
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Claude Remote to access your camera to scan QR codes"
+        }
+      ]
+    ],
+    "scheme": "claude-remote"
+  }
+}

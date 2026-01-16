@@ -9,3 +9,23 @@ yarn-error.log*
 # Cache files
 .channels_cache_v2.json
 .users_cache.json
+
+# Firebase credentials (never commit these!)
+config/firebase-service-account.json
+**/GoogleService-Info.plist
+
+# iOS build artifacts
+ios/Pods/
+ios/*.xcworkspace
+ios/Podfile.lock
+ios/build/
+ios/DerivedData/
+
+# Device registry storage
+.claude-remote/
+
+# Mobile app (Expo)
+mobile/node_modules/
+mobile/.expo/
+mobile/dist/
+mobile/web-build/
