@@ -6,6 +6,7 @@
   "scripts": {
     "server": "node src/server.js",
     "wrapper": "node src/wrapper.js",
+    "intercept": "CLAUDE_INTERCEPT_SERVER=ws://localhost:8085 node --require ./src/intercept/intercept.cjs -e 'console.log(\"Interceptor test: module loaded successfully\")'",
     "test": "node --test tests/**/*.test.js",
     "test:watch": "node --test --watch tests/**/*.test.js",
     "test:server": "node --test tests/server.test.js",

@@ -88,11 +88,14 @@ async function notifyDevicesOfWaiting(waitingInfo) {
  * Session structure:
  * {
  *   id: string,
+ *   type: 'pty' | 'intercept',
  *   created: Date,
  *   lastActivity: Date,
- *   wrapperWs: WebSocket,
+ *   wrapperWs: WebSocket,           // for PTY sessions
+ *   interceptorWs: WebSocket,       // for intercept sessions
  *   metadata: { cwd, pid, ... },
- *   history: Array<{type, data, timestamp}>,
+ *   history: Array<{type, data, timestamp}>,  // for PTY sessions
+ *   events: Array<{type, ts, ...}>,           // for intercept sessions (structured API events)
  *   inputDetector: InputDetector
  * }
  */
@@ -126,6 +129,7 @@ function createSession(wrapperWs, metadata) {
 
   const session = {
     id,
+    type: 'pty',
     created: new Date(),
     lastActivity: new Date(),
     wrapperWs,
@@ -136,7 +140,28 @@ function createSession(wrapperWs, metadata) {
   };
 
   sessions.set(id, session);
-  console.log(`[Session] Created session ${id}`);
+  console.log(`[Session] Created PTY session ${id}`);
+  return session;
+}
+
+function createInterceptSession(interceptorWs, metadata) {
+  const id = crypto.randomBytes(8).toString('hex');
+
+  const session = {
+    id,
+    type: 'intercept',
+    created: new Date(),
+    lastActivity: new Date(),
+    interceptorWs,
+    metadata: metadata || {},
+    events: [],      // Structured API events (SSE, requests, responses)
+    maxEvents: 10000,
+    // Accumulated conversation state for late-joining viewers
+    conversation: [],  // Array of {role, content_blocks} representing the conversation
+  };
+
+  sessions.set(id, session);
+  console.log(`[Session] Created intercept session ${id}`);
   return session;
 }
 
@@ -150,6 +175,53 @@ function addToHistory(session, type, data) {
   // Trim history
   if (session.history.length > session.maxHistory) {
     session.history = session.history.slice(-session.maxHistory);
+  }
+}
+
+function addToEvents(session, event) {
+  session.events.push(event);
+  if (session.events.length > session.maxEvents) {
+    session.events = session.events.slice(-session.maxEvents);
+  }
+}
+
+function handleInterceptorMessage(ws, clientId, message) {
+  const client = clients.get(clientId);
+  if (!client) return;
+
+  const session = sessions.get(client.sessionId);
+  if (!session) return;
+
+  session.lastActivity = new Date();
+
+  switch (message.type) {
+    case 'api_request':
+    case 'sse_event':
+    case 'api_response':
+    case 'api_error': {
+      // Store the event
+      addToEvents(session, message);
+      // Broadcast to all viewers of this session
+      broadcastToSession(session.id, message);
+      break;
+    }
+
+    case 'metadata': {
+      // Update session metadata (interceptor sends cwd, hostname, etc.)
+      session.metadata = { ...session.metadata, ...message.data };
+      broadcastToSession(session.id, { type: 'metadata', data: session.metadata });
+      break;
+    }
+
+    case 'exit': {
+      console.log(`[Session] Intercept session ${session.id} ended`);
+      broadcastToSession(session.id, message);
+      sessions.delete(session.id);
+      break;
+    }
+
+    default:
+      console.warn(`[Interceptor] Unknown message type: ${message.type}`);
   }
 }
 
@@ -213,7 +285,20 @@ function handleViewerMessage(ws, clientId, message) {
   if (!client) return;
 
   const session = sessions.get(client.sessionId);
-  if (!session || !session.wrapperWs || session.wrapperWs.readyState !== 1) {
+  if (!session) {
+    ws.send(JSON.stringify({ type: 'error', error: 'Session not available' }));
+    return;
+  }
+
+  // For intercept sessions, input forwarding is not yet supported
+  if (session.type === 'intercept') {
+    if (message.type === 'input') {
+      ws.send(JSON.stringify({ type: 'error', error: 'Input not supported for intercept sessions (observe only)' }));
+    }
+    return;
+  }
+
+  if (!session.wrapperWs || session.wrapperWs.readyState !== 1) {
     ws.send(JSON.stringify({ type: 'error', error: 'Session not available' }));
     return;
   }
@@ -319,18 +404,42 @@ function handleConnection(ws, req) {
       role: 'viewer'
     });
 
-    // Send session info and history
-    ws.send(JSON.stringify({
+    // Send session info and history/events based on session type
+    const attachMessage = {
       type: 'session-attached',
       sessionId: session.id,
+      sessionType: session.type || 'pty',
       metadata: session.metadata,
-      history: session.history
+    };
+
+    if (session.type === 'intercept') {
+      attachMessage.events = session.events || [];
+    } else {
+      attachMessage.history = session.history;
+    }
+
+    ws.send(JSON.stringify(attachMessage));
+
+  } else if (role === 'interceptor') {
+    // This is an API interceptor (injected into Claude Code via --require)
+    const session = createInterceptSession(ws, {});
+    clients.set(clientId, {
+      ws,
+      sessionId: session.id,
+      role: 'interceptor'
+    });
+
+    // Send session ID back to interceptor
+    ws.send(JSON.stringify({
+      type: 'session-created',
+      sessionId: session.id,
+      serverUrl: `ws://${HOST}:${PORT}`
     }));
 
   } else {
     ws.send(JSON.stringify({
       type: 'error',
-      error: 'Invalid role. Use ?role=wrapper or ?role=viewer'
+      error: 'Invalid role. Use ?role=wrapper, ?role=viewer, or ?role=interceptor'
     }));
     ws.close();
     return;
@@ -346,6 +455,8 @@ function handleConnection(ws, req) {
         handleWrapperMessage(ws, clientId, message);
       } else if (client.role === 'viewer') {
         handleViewerMessage(ws, clientId, message);
+      } else if (client.role === 'interceptor') {
+        handleInterceptorMessage(ws, clientId, message);
       }
     } catch (err) {
       console.error(`[Server] Error handling message:`, err.message);
@@ -357,15 +468,15 @@ function handleConnection(ws, req) {
     console.log(`[Server] Client ${clientId} disconnected`);
     const client = clients.get(clientId);
 
-    if (client && client.role === 'wrapper') {
-      // Wrapper disconnected, remove session
+    if (client && (client.role === 'wrapper' || client.role === 'interceptor')) {
       const session = sessions.get(client.sessionId);
       if (session) {
-        console.log(`[Session] Wrapper disconnected for session ${session.id}`);
+        const roleLabel = client.role === 'wrapper' ? 'Wrapper' : 'Interceptor';
+        console.log(`[Session] ${roleLabel} disconnected for session ${session.id}`);
         broadcastToSession(session.id, {
           type: 'wrapper-disconnected'
         });
-        // Keep session for a bit in case wrapper reconnects
+        // Keep session for a bit in case it reconnects
         setTimeout(() => {
           if (sessions.has(client.sessionId)) {
             console.log(`[Session] Cleaning up session ${client.sessionId}`);
@@ -679,6 +790,22 @@ async function handleHttpRequest(req, res) {
         });
       });
     });
+  } else if (req.url === '/intercept' || req.url === '/intercept.html') {
+    // Serve structured intercept viewer
+    import('fs').then(fs => {
+      import('path').then(pathMod => {
+        const filePath = pathMod.join(__dirname, '..', 'public', 'intercept.html');
+        fs.readFile(filePath, 'utf8', (err, data) => {
+          if (err) {
+            res.writeHead(404, { 'Content-Type': 'text/plain' });
+            res.end('Intercept viewer not found');
+          } else {
+            res.writeHead(200, { 'Content-Type': 'text/html' });
+            res.end(data);
+          }
+        });
+      });
+    });
   } else if (req.url === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
@@ -689,6 +816,7 @@ async function handleHttpRequest(req, res) {
   } else if (req.url === '/sessions') {
     const sessionList = Array.from(sessions.values()).map(s => ({
       id: s.id,
+      type: s.type || 'pty',
       created: s.created,
       lastActivity: s.lastActivity,
       metadata: s.metadata
