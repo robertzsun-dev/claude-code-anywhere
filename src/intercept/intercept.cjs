@@ -107,6 +107,8 @@ function connectRelay() {
     if (url.protocol === 'http:') url.protocol = 'ws:';
     if (url.protocol === 'https:') url.protocol = 'wss:';
     url.searchParams.set('role', 'interceptor');
+    // Always send PID so server can match by PID if session ID is stale
+    url.searchParams.set('pid', String(process.pid));
     // If we already have a session ID, ask to rejoin it
     if (sessionId) {
       url.searchParams.set('session', sessionId);

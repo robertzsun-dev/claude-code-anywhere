@@ -35,6 +35,20 @@ const USE_HTTPS = process.env.HTTPS === 'true' || existsSync(join(__dirname, '..
 const sessions = new Map();
 // Client connections: Map<clientId, {ws, sessionId, role}>
 const clients = new Map();
+// PID-to-session index: Map<pid, sessionId> for reconnection by PID
+const pidIndex = new Map();
+
+// Grace periods before reaping disconnected sessions
+const PTY_GRACE_PERIOD = 30_000;        // 30 seconds for PTY sessions
+const INTERCEPT_GRACE_PERIOD = 300_000; // 5 minutes for intercept sessions
+
+// WebSocket ping/pong settings
+const WS_PING_INTERVAL = 30_000;  // Ping every 30s
+const WS_PONG_TIMEOUT = 60_000;   // Consider dead if no pong within 60s
+
+// Stale session reaper settings
+const REAPER_INTERVAL = 60_000;            // Check every 60s
+const HEARTBEAT_STALE_THRESHOLD = 120_000; // No heartbeat in 2 minutes = suspect
 
 // Mobile app infrastructure
 const deviceRegistry = new DeviceRegistry({
@@ -165,6 +179,25 @@ function createInterceptSession(interceptorWs, metadata) {
   return session;
 }
 
+// Register a PID for session lookup
+function registerPid(pid, sessionId) {
+  if (pid && sessionId) {
+    pidIndex.set(Number(pid), sessionId);
+  }
+}
+
+// Find an existing session by PID (fallback when session ID is unknown/expired)
+function findSessionByPid(pid) {
+  if (!pid) return null;
+  const sessionId = pidIndex.get(Number(pid));
+  if (sessionId && sessions.has(sessionId)) {
+    return sessions.get(sessionId);
+  }
+  // Clean up stale index entry
+  if (sessionId) pidIndex.delete(Number(pid));
+  return null;
+}
+
 function addToHistory(session, type, data) {
   session.history.push({
     type,
@@ -209,7 +242,10 @@ function handleInterceptorMessage(ws, clientId, message) {
     case 'heartbeat': {
       // Keepalive from interceptor - update lastActivity and track PID
       session.lastHeartbeat = new Date();
-      if (message.pid) session.metadata.pid = message.pid;
+      if (message.pid) {
+        session.metadata.pid = message.pid;
+        registerPid(message.pid, session.id);
+      }
       // Don't store heartbeats in events or broadcast - they're just keepalives
       break;
     }
@@ -217,6 +253,7 @@ function handleInterceptorMessage(ws, clientId, message) {
     case 'metadata': {
       // Update session metadata (interceptor sends cwd, hostname, etc.)
       session.metadata = { ...session.metadata, ...message.data };
+      if (message.data?.pid) registerPid(message.data.pid, session.id);
       broadcastToSession(session.id, { type: 'metadata', data: session.metadata });
       break;
     }
@@ -224,6 +261,8 @@ function handleInterceptorMessage(ws, clientId, message) {
     case 'exit': {
       console.log(`[Session] Intercept session ${session.id} ended (code: ${message.code}, signal: ${message.signal || 'none'})`);
       broadcastToSession(session.id, message);
+      // Clean up PID index
+      if (session.metadata?.pid) pidIndex.delete(Number(session.metadata.pid));
       sessions.delete(session.id);
       break;
     }
@@ -431,18 +470,35 @@ function handleConnection(ws, req) {
   } else if (role === 'interceptor') {
     // This is an API interceptor (injected into Claude Code via --require)
     let session;
+    const pid = url.searchParams.get('pid');
 
-    // Support reconnection: if the interceptor provides a session ID and it still exists,
-    // re-associate with it instead of creating a new session
+    // Support reconnection with multiple fallback strategies:
+    // 1. Try matching by session ID (interceptor remembers its session)
+    // 2. Try matching by PID (same process, lost session ID after server restart)
+    // 3. Create new session as last resort
     if (sessionId && sessions.has(sessionId)) {
       session = sessions.get(sessionId);
-      session.interceptorWs = ws; // Update the WebSocket reference
+      session.interceptorWs = ws;
       session.lastActivity = new Date();
-      console.log(`[Session] Interceptor reconnected to session ${sessionId}`);
-      // Notify viewers the session is back
+      // Cancel any pending cleanup timer
+      if (session._cleanupTimer) {
+        clearTimeout(session._cleanupTimer);
+        session._cleanupTimer = null;
+      }
+      console.log(`[Session] Interceptor reconnected to session ${sessionId} (by session ID)`);
+      broadcastToSession(session.id, { type: 'interceptor-reconnected' });
+    } else if (pid && (session = findSessionByPid(pid))) {
+      session.interceptorWs = ws;
+      session.lastActivity = new Date();
+      if (session._cleanupTimer) {
+        clearTimeout(session._cleanupTimer);
+        session._cleanupTimer = null;
+      }
+      console.log(`[Session] Interceptor reconnected to session ${session.id} (by PID ${pid})`);
       broadcastToSession(session.id, { type: 'interceptor-reconnected' });
     } else {
       session = createInterceptSession(ws, {});
+      if (pid) registerPid(pid, session.id);
     }
 
     clients.set(clientId, {
@@ -498,13 +554,30 @@ function handleConnection(ws, req) {
         broadcastToSession(session.id, {
           type: 'wrapper-disconnected'
         });
-        // Keep session for a bit in case it reconnects
-        setTimeout(() => {
+        // Use longer grace period for intercept sessions (they reconnect and carry
+        // structured data that's harder to rebuild). PTY sessions are cheaper to lose.
+        const gracePeriod = session.type === 'intercept'
+          ? INTERCEPT_GRACE_PERIOD   // 5 minutes
+          : PTY_GRACE_PERIOD;        // 30 seconds
+        // Store timer so it can be cancelled on reconnection
+        session._cleanupTimer = setTimeout(() => {
           if (sessions.has(client.sessionId)) {
-            console.log(`[Session] Cleaning up session ${client.sessionId}`);
-            sessions.delete(client.sessionId);
+            // For intercept sessions, check if PID is still alive before reaping
+            if (session.type === 'intercept' && session.metadata?.pid) {
+              if (isPidAlive(session.metadata.pid)) {
+                console.log(`[Session] PID ${session.metadata.pid} still alive, extending grace for ${session.id}`);
+                // Process still running but WebSocket died. Extend grace period.
+                session._cleanupTimer = setTimeout(() => {
+                  if (sessions.has(client.sessionId)) {
+                    reapSession(client.sessionId, 'grace period expired (extended)');
+                  }
+                }, INTERCEPT_GRACE_PERIOD);
+                return;
+              }
+            }
+            reapSession(client.sessionId, 'grace period expired');
           }
-        }, 30000); // 30 second grace period
+        }, gracePeriod);
       }
     }
 
@@ -514,6 +587,117 @@ function handleConnection(ws, req) {
   ws.on('error', (err) => {
     console.error(`[Server] WebSocket error for ${clientId}:`, err.message);
   });
+}
+
+// --- PID Liveness Check ---
+// Check if a process is still running (same-machine only)
+function isPidAlive(pid) {
+  try {
+    process.kill(Number(pid), 0); // signal 0 = check existence, don't actually signal
+    return true;
+  } catch (e) {
+    // ESRCH = no such process, EPERM = process exists but we can't signal it (still alive)
+    return e.code === 'EPERM';
+  }
+}
+
+// Clean up a session and its associated state
+function reapSession(sessionId, reason) {
+  const session = sessions.get(sessionId);
+  if (!session) return;
+
+  console.log(`[Session] Reaping session ${sessionId}: ${reason}`);
+
+  // Clean up PID index
+  if (session.metadata?.pid) pidIndex.delete(Number(session.metadata.pid));
+
+  // Clean up input detector
+  if (session.inputDetector) session.inputDetector.destroy();
+
+  // Notify viewers
+  broadcastToSession(sessionId, { type: 'session-reaped', reason });
+
+  sessions.delete(sessionId);
+}
+
+// --- WebSocket Ping/Pong ---
+// Detects silently-dead connections that never fire 'close'.
+// Without this, a connection that dies mid-TCP (NAT timeout, proxy kill,
+// cable unplug) can keep the session alive forever.
+function setupPingPong(wss) {
+  // Track pong state per client
+  const pongReceived = new WeakMap();
+
+  wss.on('connection', (ws) => {
+    pongReceived.set(ws, true); // assume alive at connect
+
+    ws.on('pong', () => {
+      pongReceived.set(ws, true);
+    });
+  });
+
+  // Periodic ping sweep
+  const interval = setInterval(() => {
+    for (const ws of wss.clients) {
+      if (pongReceived.get(ws) === false) {
+        // No pong received since last ping - connection is dead
+        console.log('[Ping] Terminating dead WebSocket connection');
+        ws.terminate(); // this fires the 'close' event
+        continue;
+      }
+      pongReceived.set(ws, false);
+      try {
+        ws.ping();
+      } catch (e) {
+        // Ignore ping errors
+      }
+    }
+  }, WS_PING_INTERVAL);
+
+  // Clean up on server close
+  wss.on('close', () => clearInterval(interval));
+}
+
+// --- Stale Session Reaper ---
+// Periodically checks for zombie intercept sessions with no recent heartbeat
+// and no live WebSocket connection.
+function startSessionReaper() {
+  setInterval(() => {
+    const now = Date.now();
+
+    for (const [sessionId, session] of sessions.entries()) {
+      if (session.type !== 'intercept') continue;
+
+      // Check if the interceptor WebSocket is still connected
+      const wsAlive = session.interceptorWs && session.interceptorWs.readyState === 1;
+      if (wsAlive) continue; // Connection is fine, skip
+
+      // WebSocket is not connected. Check heartbeat staleness.
+      const lastHb = session.lastHeartbeat ? session.lastHeartbeat.getTime() : 0;
+      const lastAct = session.lastActivity ? session.lastActivity.getTime() : 0;
+      const lastSeen = Math.max(lastHb, lastAct);
+      const staleDuration = now - lastSeen;
+
+      if (staleDuration < HEARTBEAT_STALE_THRESHOLD) continue; // Recently active
+
+      // Session is stale. Check if the process is still alive.
+      if (session.metadata?.pid && isPidAlive(session.metadata.pid)) {
+        // Process alive but WebSocket down. Don't reap yet - the interceptor
+        // should reconnect soon. Log it so we can debug if it doesn't.
+        if (staleDuration > INTERCEPT_GRACE_PERIOD) {
+          console.log(`[Reaper] Session ${sessionId} PID ${session.metadata.pid} alive but no WS for ${Math.round(staleDuration / 1000)}s`);
+        }
+        continue;
+      }
+
+      // Process is dead (or PID unknown) and no WebSocket. Reap it.
+      if (session._cleanupTimer) {
+        clearTimeout(session._cleanupTimer);
+        session._cleanupTimer = null;
+      }
+      reapSession(sessionId, `stale (no heartbeat for ${Math.round(staleDuration / 1000)}s, PID ${session.metadata?.pid || 'unknown'} not alive)`);
+    }
+  }, REAPER_INTERVAL);
 }
 
 // Directory browser handler
@@ -860,6 +1044,12 @@ async function handleHttpRequest(req, res) {
 // Create WebSocket server
 const wss = new WebSocketServer({ server: httpServer });
 wss.on('connection', handleConnection);
+
+// Detect silently-dead WebSocket connections via ping/pong
+setupPingPong(wss);
+
+// Periodically reap zombie sessions
+startSessionReaper();
 
 // Start server
 httpServer.listen(PORT, HOST, () => {
