@@ -280,9 +280,19 @@ async function processSSEStream(readableStream, reqId) {
 // Extracts relevant metadata from API request bodies
 
 function isAnthropicMessagesAPI(url) {
-  // Match api.anthropic.com/v1/messages or any proxy path containing /v1/messages
-  return (url.includes('anthropic.com') && url.includes('/v1/messages')) ||
-         url.includes('/v1/messages');
+  // Broad URL check: catches both direct api.anthropic.com and proxy setups.
+  // Must be paired with looksLikeAnthropicRequest() body validation to avoid
+  // false-positives on unrelated APIs that also have /v1/messages paths.
+  return url.includes('/v1/messages');
+}
+
+function looksLikeAnthropicRequest(body) {
+  // Validates that a parsed request body looks like an Anthropic Messages API call.
+  // This guards against false-positives from the broad URL match above.
+  return body
+    && typeof body.model === 'string'
+    && body.model.startsWith('claude')
+    && Array.isArray(body.messages);
 }
 
 function truncate(str, max) {
@@ -381,8 +391,24 @@ if (typeof originalFetch === 'function') {
       url = '';
     }
 
-    // Only intercept Anthropic Messages API calls
+    // Quick URL gate - cheap check to skip obviously unrelated requests
     if (!isAnthropicMessagesAPI(url)) {
+      return originalFetch.apply(this, arguments);
+    }
+
+    // Body validation - confirm this actually looks like an Anthropic request
+    // to avoid false-positives from unrelated APIs with /v1/messages paths
+    let parsedBody = null;
+    try {
+      const bodyStr = init?.body;
+      if (typeof bodyStr === 'string') {
+        parsedBody = JSON.parse(bodyStr);
+      }
+    } catch (e) {
+      debug('body parse error:', e.message);
+    }
+
+    if (!looksLikeAnthropicRequest(parsedBody)) {
       return originalFetch.apply(this, arguments);
     }
 
@@ -392,16 +418,12 @@ if (typeof originalFetch === 'function') {
 
     // --- Capture request metadata ---
     try {
-      const bodyStr = init?.body;
-      if (typeof bodyStr === 'string') {
-        const body = JSON.parse(bodyStr);
-        relay({
-          type: 'api_request',
-          ts: Date.now(),
-          reqId,
-          data: extractRequestInfo(body),
-        });
-      }
+      relay({
+        type: 'api_request',
+        ts: Date.now(),
+        reqId,
+        data: extractRequestInfo(parsedBody),
+      });
     } catch (e) {
       debug('request capture error:', e.message);
     }
@@ -521,16 +543,20 @@ https.request = function interceptedHttpsRequest(urlOrOptions, optionsOrCb, mayb
 
   const host = options.hostname || options.host || '';
   const reqPath = options.path || '';
+  const fullUrl = host + reqPath;
 
-  // Only intercept Anthropic API
-  if (!host.includes('anthropic.com') || !reqPath.includes('/v1/messages')) {
+  // Quick URL gate - same broad check as the fetch interceptor
+  if (!isAnthropicMessagesAPI(fullUrl)) {
     return origHttpsRequest.apply(this, arguments);
   }
 
   const reqId = `req_${++requestCounter}_${Date.now()}`;
-  debug('intercepting https.request:', host + reqPath, 'reqId:', reqId);
+  // Track whether the body validated as Anthropic so response capture can check
+  let isConfirmedAnthropic = false;
 
-  // Wrap callback to capture response
+  debug('intercepting https.request (tentative):', fullUrl, 'reqId:', reqId);
+
+  // Wrap callback to capture response (only relays if body validated)
   const wrappedCallback = function (res) {
     const contentType = res.headers['content-type'] || '';
     const chunks = [];
@@ -539,41 +565,43 @@ https.request = function interceptedHttpsRequest(urlOrOptions, optionsOrCb, mayb
     res.on = function (event, handler) {
       if (event === 'data') {
         return origOn('data', function (chunk) {
-          chunks.push(chunk);
+          if (isConfirmedAnthropic) chunks.push(chunk);
           handler(chunk);
         });
       }
       if (event === 'end') {
         return origOn('end', function () {
-          // Process captured data
-          try {
-            const body = Buffer.concat(chunks).toString();
-            if (contentType.includes('text/event-stream')) {
-              // Parse SSE events from the captured body
-              const events = body.split('\n\n');
-              for (const block of events) {
-                const parsed = parseSSEBlock(block);
-                if (parsed && parsed.event !== 'ping') {
-                  relay({
-                    type: 'sse_event',
-                    ts: Date.now(),
-                    reqId,
-                    event: parsed.event,
-                    data: parsed.data,
-                  });
+          if (isConfirmedAnthropic) {
+            // Process captured data
+            try {
+              const body = Buffer.concat(chunks).toString();
+              if (contentType.includes('text/event-stream')) {
+                // Parse SSE events from the captured body
+                const events = body.split('\n\n');
+                for (const block of events) {
+                  const parsed = parseSSEBlock(block);
+                  if (parsed && parsed.event !== 'ping') {
+                    relay({
+                      type: 'sse_event',
+                      ts: Date.now(),
+                      reqId,
+                      event: parsed.event,
+                      data: parsed.data,
+                    });
+                  }
                 }
+              } else if (contentType.includes('application/json')) {
+                const data = JSON.parse(body);
+                relay({
+                  type: 'api_response',
+                  ts: Date.now(),
+                  reqId,
+                  data: { id: data.id, model: data.model, stop_reason: data.stop_reason, usage: data.usage },
+                });
               }
-            } else if (contentType.includes('application/json')) {
-              const data = JSON.parse(body);
-              relay({
-                type: 'api_response',
-                ts: Date.now(),
-                reqId,
-                data: { id: data.id, model: data.model, stop_reason: data.stop_reason, usage: data.usage },
-              });
+            } catch (e) {
+              debug('https capture error:', e.message);
             }
-          } catch (e) {
-            debug('https capture error:', e.message);
           }
           handler();
         });
@@ -590,7 +618,7 @@ https.request = function interceptedHttpsRequest(urlOrOptions, optionsOrCb, mayb
     typeof optionsOrCb === 'function' ? undefined : wrappedCallback
   );
 
-  // Capture request body
+  // Capture request body for validation + relay
   const origWrite = req.write.bind(req);
   let reqBody = '';
 
@@ -606,16 +634,20 @@ https.request = function interceptedHttpsRequest(urlOrOptions, optionsOrCb, mayb
     if (data) {
       reqBody += typeof data === 'string' ? data : data.toString();
     }
-    // Relay request info
+    // Validate body and relay request info only if it looks like Anthropic
     try {
       if (reqBody) {
         const body = JSON.parse(reqBody);
-        relay({
-          type: 'api_request',
-          ts: Date.now(),
-          reqId,
-          data: extractRequestInfo(body),
-        });
+        if (looksLikeAnthropicRequest(body)) {
+          isConfirmedAnthropic = true;
+          debug('confirmed Anthropic request:', fullUrl, 'reqId:', reqId);
+          relay({
+            type: 'api_request',
+            ts: Date.now(),
+            reqId,
+            data: extractRequestInfo(body),
+          });
+        }
       }
     } catch (e) {}
 
