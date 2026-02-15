@@ -43,8 +43,7 @@ const PTY_GRACE_PERIOD = 30_000;        // 30 seconds for PTY sessions
 const INTERCEPT_GRACE_PERIOD = 300_000; // 5 minutes for intercept sessions
 
 // WebSocket ping/pong settings
-const WS_PING_INTERVAL = 30_000;  // Ping every 30s
-const WS_PONG_TIMEOUT = 60_000;   // Consider dead if no pong within 60s
+const WS_PING_INTERVAL = 30_000;  // Ping every 30s; dead if no pong by next sweep
 
 // Stale session reaper settings
 const REAPER_INTERVAL = 60_000;            // Check every 60s
@@ -261,6 +260,12 @@ function handleInterceptorMessage(ws, clientId, message) {
     case 'exit': {
       console.log(`[Session] Intercept session ${session.id} ended (code: ${message.code}, signal: ${message.signal || 'none'})`);
       broadcastToSession(session.id, message);
+      // Cancel any pending cleanup timer (could exist if interceptor disconnected
+      // and reconnected before sending exit)
+      if (session._cleanupTimer) {
+        clearTimeout(session._cleanupTimer);
+        session._cleanupTimer = null;
+      }
       // Clean up PID index
       if (session.metadata?.pid) pidIndex.delete(Number(session.metadata.pid));
       sessions.delete(session.id);
@@ -549,35 +554,45 @@ function handleConnection(ws, req) {
     if (client && (client.role === 'wrapper' || client.role === 'interceptor')) {
       const session = sessions.get(client.sessionId);
       if (session) {
-        const roleLabel = client.role === 'wrapper' ? 'Wrapper' : 'Interceptor';
-        console.log(`[Session] ${roleLabel} disconnected for session ${session.id}`);
-        broadcastToSession(session.id, {
-          type: 'wrapper-disconnected'
-        });
-        // Use longer grace period for intercept sessions (they reconnect and carry
-        // structured data that's harder to rebuild). PTY sessions are cheaper to lose.
-        const gracePeriod = session.type === 'intercept'
-          ? INTERCEPT_GRACE_PERIOD   // 5 minutes
-          : PTY_GRACE_PERIOD;        // 30 seconds
-        // Store timer so it can be cancelled on reconnection
-        session._cleanupTimer = setTimeout(() => {
-          if (sessions.has(client.sessionId)) {
-            // For intercept sessions, check if PID is still alive before reaping
-            if (session.type === 'intercept' && session.metadata?.pid) {
-              if (isPidAlive(session.metadata.pid)) {
-                console.log(`[Session] PID ${session.metadata.pid} still alive, extending grace for ${session.id}`);
-                // Process still running but WebSocket died. Extend grace period.
-                session._cleanupTimer = setTimeout(() => {
-                  if (sessions.has(client.sessionId)) {
-                    reapSession(client.sessionId, 'grace period expired (extended)');
-                  }
-                }, INTERCEPT_GRACE_PERIOD);
-                return;
+        // IMPORTANT: Only act on this disconnect if the closing WebSocket is still
+        // the session's current producer. If an interceptor reconnects (creating a
+        // new clientId + ws), the OLD ws will eventually fire 'close'. Without this
+        // guard, the stale close handler would set a cleanup timer and reap the
+        // session even though a new interceptor is actively connected.
+        const currentWs = session.type === 'intercept' ? session.interceptorWs : session.wrapperWs;
+        if (currentWs !== ws) {
+          console.log(`[Session] Ignoring stale ${client.role} disconnect for session ${session.id} (already replaced)`);
+        } else {
+          const roleLabel = client.role === 'wrapper' ? 'Wrapper' : 'Interceptor';
+          console.log(`[Session] ${roleLabel} disconnected for session ${session.id}`);
+          broadcastToSession(session.id, {
+            type: 'wrapper-disconnected'
+          });
+          // Use longer grace period for intercept sessions (they reconnect and carry
+          // structured data that's harder to rebuild). PTY sessions are cheaper to lose.
+          const gracePeriod = session.type === 'intercept'
+            ? INTERCEPT_GRACE_PERIOD   // 5 minutes
+            : PTY_GRACE_PERIOD;        // 30 seconds
+          // Store timer so it can be cancelled on reconnection
+          session._cleanupTimer = setTimeout(() => {
+            if (sessions.has(client.sessionId)) {
+              // For intercept sessions, check if PID is still alive before reaping
+              if (session.type === 'intercept' && session.metadata?.pid) {
+                if (isPidAlive(session.metadata.pid)) {
+                  console.log(`[Session] PID ${session.metadata.pid} still alive, extending grace for ${session.id}`);
+                  // Process still running but WebSocket died. Extend grace period.
+                  session._cleanupTimer = setTimeout(() => {
+                    if (sessions.has(client.sessionId)) {
+                      reapSession(client.sessionId, 'grace period expired (extended)');
+                    }
+                  }, INTERCEPT_GRACE_PERIOD);
+                  return;
+                }
               }
+              reapSession(client.sessionId, 'grace period expired');
             }
-            reapSession(client.sessionId, 'grace period expired');
-          }
-        }, gracePeriod);
+          }, gracePeriod);
+        }
       }
     }
 
@@ -607,6 +622,12 @@ function reapSession(sessionId, reason) {
   if (!session) return;
 
   console.log(`[Session] Reaping session ${sessionId}: ${reason}`);
+
+  // Cancel any pending cleanup timer
+  if (session._cleanupTimer) {
+    clearTimeout(session._cleanupTimer);
+    session._cleanupTimer = null;
+  }
 
   // Clean up PID index
   if (session.metadata?.pid) pidIndex.delete(Number(session.metadata.pid));

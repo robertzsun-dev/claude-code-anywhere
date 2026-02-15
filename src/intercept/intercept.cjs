@@ -132,6 +132,12 @@ function connectRelay() {
     wsOn(ws, 'open', () => {
       connected = true;
       debug('connected to server', sessionId ? '(reconnecting session ' + sessionId + ')' : '(new)');
+      // Unref the underlying socket so the WebSocket connection doesn't prevent
+      // Claude Code from exiting when it's done. Without this, the open WebSocket
+      // keeps the Node.js event loop alive and the process hangs.
+      if (ws._socket && typeof ws._socket.unref === 'function') {
+        ws._socket.unref();
+      }
       // Flush buffered events
       const pending = eventBuffer.splice(0);
       for (const event of pending) {
@@ -142,6 +148,7 @@ function connectRelay() {
       heartbeatTimer = setInterval(() => {
         relay({ type: 'heartbeat', ts: Date.now(), pid: process.pid });
       }, HEARTBEAT_INTERVAL);
+      heartbeatTimer.unref();  // Don't prevent process exit
     });
 
     wsOn(ws, 'message', (data) => {
@@ -165,6 +172,7 @@ function connectRelay() {
       if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
       if (reconnectTimer) clearTimeout(reconnectTimer);
       reconnectTimer = setTimeout(connectRelay, RECONNECT_DELAY);
+      reconnectTimer.unref();  // Don't prevent process exit
     });
 
     wsOn(ws, 'error', (err) => {
@@ -519,7 +527,8 @@ https.request = function interceptedHttpsRequest(urlOrOptions, optionsOrCb, mayb
     return origHttpsRequest.apply(this, arguments);
   }
 
-  debug('intercepting https.request:', host + reqPath);
+  const reqId = `req_${++requestCounter}_${Date.now()}`;
+  debug('intercepting https.request:', host + reqPath, 'reqId:', reqId);
 
   // Wrap callback to capture response
   const wrappedCallback = function (res) {
@@ -548,6 +557,7 @@ https.request = function interceptedHttpsRequest(urlOrOptions, optionsOrCb, mayb
                   relay({
                     type: 'sse_event',
                     ts: Date.now(),
+                    reqId,
                     event: parsed.event,
                     data: parsed.data,
                   });
@@ -558,6 +568,7 @@ https.request = function interceptedHttpsRequest(urlOrOptions, optionsOrCb, mayb
               relay({
                 type: 'api_response',
                 ts: Date.now(),
+                reqId,
                 data: { id: data.id, model: data.model, stop_reason: data.stop_reason, usage: data.usage },
               });
             }
@@ -602,6 +613,7 @@ https.request = function interceptedHttpsRequest(urlOrOptions, optionsOrCb, mayb
         relay({
           type: 'api_request',
           ts: Date.now(),
+          reqId,
           data: extractRequestInfo(body),
         });
       }
