@@ -206,6 +206,14 @@ function handleInterceptorMessage(ws, clientId, message) {
       break;
     }
 
+    case 'heartbeat': {
+      // Keepalive from interceptor - update lastActivity and track PID
+      session.lastHeartbeat = new Date();
+      if (message.pid) session.metadata.pid = message.pid;
+      // Don't store heartbeats in events or broadcast - they're just keepalives
+      break;
+    }
+
     case 'metadata': {
       // Update session metadata (interceptor sends cwd, hostname, etc.)
       session.metadata = { ...session.metadata, ...message.data };
@@ -214,7 +222,7 @@ function handleInterceptorMessage(ws, clientId, message) {
     }
 
     case 'exit': {
-      console.log(`[Session] Intercept session ${session.id} ended`);
+      console.log(`[Session] Intercept session ${session.id} ended (code: ${message.code}, signal: ${message.signal || 'none'})`);
       broadcastToSession(session.id, message);
       sessions.delete(session.id);
       break;
@@ -422,7 +430,21 @@ function handleConnection(ws, req) {
 
   } else if (role === 'interceptor') {
     // This is an API interceptor (injected into Claude Code via --require)
-    const session = createInterceptSession(ws, {});
+    let session;
+
+    // Support reconnection: if the interceptor provides a session ID and it still exists,
+    // re-associate with it instead of creating a new session
+    if (sessionId && sessions.has(sessionId)) {
+      session = sessions.get(sessionId);
+      session.interceptorWs = ws; // Update the WebSocket reference
+      session.lastActivity = new Date();
+      console.log(`[Session] Interceptor reconnected to session ${sessionId}`);
+      // Notify viewers the session is back
+      broadcastToSession(session.id, { type: 'interceptor-reconnected' });
+    } else {
+      session = createInterceptSession(ws, {});
+    }
+
     clients.set(clientId, {
       ws,
       sessionId: session.id,

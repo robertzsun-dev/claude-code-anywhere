@@ -22,13 +22,22 @@ if (process.env.CLAUDE_INTERCEPT === '0') return;
 const serverUrl = process.env.CLAUDE_INTERCEPT_SERVER || process.env.CLAUDE_REMOTE_SERVER;
 if (!serverUrl) return;
 
+// Guard against NODE_OPTIONS propagation to child processes.
+// NODE_OPTIONS="--require intercept.cjs" propagates to every child `node` process
+// that Claude Code spawns (bash tool, etc.). We only want to intercept the main
+// Claude Code process, not its children. Use a marker env var to detect re-entry.
+if (process.env.__CLAUDE_INTERCEPT_ACTIVE === '1') return;
+process.env.__CLAUDE_INTERCEPT_ACTIVE = '1';
+
 const path = require('path');
+const crypto = require('crypto');
 
 // --- Configuration ---
 const DEBUG = process.env.CLAUDE_INTERCEPT_DEBUG === '1';
-const MAX_BUFFER = 500;
+const MAX_BUFFER = 2000;
 const MAX_CONTENT_LENGTH = 4000; // truncate large content in relayed messages
-const RECONNECT_DELAY = 5000;
+const RECONNECT_DELAY = 3000;
+const HEARTBEAT_INTERVAL = 15000; // send keepalive every 15s
 
 function debug(...args) {
   if (DEBUG) process.stderr.write('[intercept] ' + args.join(' ') + '\n');
@@ -41,6 +50,8 @@ let connected = false;
 let sessionId = null;
 let eventBuffer = [];
 let reconnectTimer = null;
+let heartbeatTimer = null;
+let requestCounter = 0; // monotonic counter for correlating requests with responses
 
 function loadWebSocket() {
   // Try multiple resolution strategies for the ws module
@@ -96,6 +107,10 @@ function connectRelay() {
     if (url.protocol === 'http:') url.protocol = 'ws:';
     if (url.protocol === 'https:') url.protocol = 'wss:';
     url.searchParams.set('role', 'interceptor');
+    // If we already have a session ID, ask to rejoin it
+    if (sessionId) {
+      url.searchParams.set('session', sessionId);
+    }
 
     // ws npm package accepts options as 2nd or 3rd arg;
     // native WebSocket only accepts protocols as 2nd arg.
@@ -114,12 +129,17 @@ function connectRelay() {
 
     wsOn(ws, 'open', () => {
       connected = true;
-      debug('connected to server');
+      debug('connected to server', sessionId ? '(reconnecting session ' + sessionId + ')' : '(new)');
       // Flush buffered events
       const pending = eventBuffer.splice(0);
       for (const event of pending) {
         relay(event);
       }
+      // Start heartbeat so the server can detect stale sessions
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
+      heartbeatTimer = setInterval(() => {
+        relay({ type: 'heartbeat', ts: Date.now(), pid: process.pid });
+      }, HEARTBEAT_INTERVAL);
     });
 
     wsOn(ws, 'message', (data) => {
@@ -140,6 +160,7 @@ function connectRelay() {
     wsOn(ws, 'close', () => {
       connected = false;
       ws = null;
+      if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
       if (reconnectTimer) clearTimeout(reconnectTimer);
       reconnectTimer = setTimeout(connectRelay, RECONNECT_DELAY);
     });
@@ -188,7 +209,7 @@ function parseSSEBlock(text) {
   return null;
 }
 
-async function processSSEStream(readableStream) {
+async function processSSEStream(readableStream, reqId) {
   let reader;
   try {
     reader = readableStream.getReader();
@@ -218,6 +239,7 @@ async function processSSEStream(readableStream) {
           relay({
             type: 'sse_event',
             ts: Date.now(),
+            reqId,
             event: parsed.event,
             data: parsed.data,
           });
@@ -354,7 +376,9 @@ if (typeof originalFetch === 'function') {
       return originalFetch.apply(this, arguments);
     }
 
-    debug('intercepting:', url);
+    // Assign a correlation ID so viewers can match requests with their SSE events
+    const reqId = `req_${++requestCounter}_${Date.now()}`;
+    debug('intercepting:', url, 'reqId:', reqId);
 
     // --- Capture request metadata ---
     try {
@@ -364,6 +388,7 @@ if (typeof originalFetch === 'function') {
         relay({
           type: 'api_request',
           ts: Date.now(),
+          reqId,
           data: extractRequestInfo(body),
         });
       }
@@ -380,6 +405,7 @@ if (typeof originalFetch === 'function') {
       relay({
         type: 'api_error',
         ts: Date.now(),
+        reqId,
         error: err.message,
       });
       throw err;
@@ -393,8 +419,8 @@ if (typeof originalFetch === 'function') {
       try {
         const [clientStream, captureStream] = response.body.tee();
 
-        // Process captured stream in background (no await)
-        processSSEStream(captureStream).catch(err => {
+        // Process captured stream in background, tagged with reqId
+        processSSEStream(captureStream, reqId).catch(err => {
           debug('SSE capture error:', err.message);
         });
 
@@ -419,6 +445,7 @@ if (typeof originalFetch === 'function') {
             relay({
               type: 'api_response',
               ts: Date.now(),
+              reqId,
               data: {
                 id: data.id,
                 model: data.model,
@@ -604,12 +631,34 @@ relay({
 connectRelay();
 debug('intercept module loaded, server:', serverUrl);
 
-// Cleanup on exit
-process.on('exit', () => {
-  if (ws) {
-    try {
-      relay({ type: 'exit', code: process.exitCode || 0 });
-      ws.close();
-    } catch (e) {}
-  }
+// --- Cleanup & Exit Handling ---
+// We need to signal the server reliably when Claude Code exits, whether
+// that's a normal exit, SIGINT (Ctrl+C), or SIGTERM (kill).
+let exitSent = false;
+
+function sendExitEvent(code, signal) {
+  if (exitSent) return;
+  exitSent = true;
+  if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
+  try {
+    relay({ type: 'exit', code: code || 0, signal: signal || null });
+    // Synchronous close attempt for ws package (has no effect on native WebSocket)
+    if (ws && typeof ws.close === 'function') ws.close();
+  } catch (e) {}
+}
+
+process.on('exit', (code) => {
+  sendExitEvent(code, null);
+});
+
+// SIGINT (Ctrl+C) - Claude Code handles this itself, but we want to
+// send our exit event before the process terminates
+process.on('SIGINT', () => {
+  sendExitEvent(130, 'SIGINT');
+  // Don't call process.exit() - let Claude Code's own handler run
+});
+
+// SIGTERM (kill) - send exit event, then let the default handler terminate
+process.on('SIGTERM', () => {
+  sendExitEvent(143, 'SIGTERM');
 });
