@@ -134,6 +134,44 @@ function findSessionByPid(pid) {
   return null;
 }
 
+// Convert intercept events to the HistoryItem format ({type, data, timestamp})
+// used by the mobile app and session-attached messages.
+function eventsToHistory(events) {
+  const items = [];
+  for (const evt of events) {
+    const ts = evt.ts ? new Date(evt.ts).toISOString() : new Date().toISOString();
+    switch (evt.type) {
+      case 'api_request': {
+        const last = evt.data?.last_turn;
+        if (last) items.push({ type: 'input', data: last, timestamp: ts });
+        break;
+      }
+      case 'sse_event': {
+        if (evt.event === 'content_block_delta' && evt.data) {
+          try {
+            const parsed = typeof evt.data === 'string' ? JSON.parse(evt.data) : evt.data;
+            const text = parsed?.delta?.text;
+            if (text) items.push({ type: 'output', data: text, timestamp: ts });
+          } catch (_) { /* ignore */ }
+        }
+        break;
+      }
+      case 'api_response': {
+        const content = evt.data?.content;
+        if (Array.isArray(content)) {
+          const text = content.filter(b => b.type === 'text').map(b => b.text).join('\n');
+          if (text) items.push({ type: 'output', data: text, timestamp: ts });
+        }
+        break;
+      }
+      case 'api_error':
+        items.push({ type: 'output', data: `Error: ${evt.error || 'unknown'}`, timestamp: ts });
+        break;
+    }
+  }
+  return items;
+}
+
 function addToEvents(session, event) {
   session.events.push(event);
   if (session.events.length > session.maxEvents) {
@@ -157,8 +195,20 @@ function handleInterceptorMessage(ws, clientId, message) {
     case 'api_error': {
       // Store the event
       addToEvents(session, message);
-      // Broadcast to all viewers of this session
+      // Broadcast structured event to all viewers (web intercept viewer)
       broadcastToSession(session.id, message);
+
+      // Also synthesize 'output' messages for mobile app compatibility.
+      // The mobile app only handles {type:'output', data} messages.
+      if (message.type === 'sse_event' && message.event === 'content_block_delta' && message.data) {
+        try {
+          const parsed = typeof message.data === 'string' ? JSON.parse(message.data) : message.data;
+          const text = parsed?.delta?.text;
+          if (text) {
+            broadcastToSession(session.id, { type: 'output', data: text });
+          }
+        } catch (_) { /* ignore */ }
+      }
       break;
     }
 
@@ -293,13 +343,17 @@ function handleConnection(ws, req) {
       role: 'viewer'
     });
 
-    // Send session info and historical events
+    // Send session info and historical events.
+    // Include both `events` (structured, for web viewer) and `history`
+    // (text items, for mobile app backward compat).
+    const events = session.events || [];
     ws.send(JSON.stringify({
       type: 'session-attached',
       sessionId: session.id,
       sessionType: 'intercept',
       metadata: session.metadata,
-      events: session.events || [],
+      events,
+      history: eventsToHistory(events),
     }));
 
   } else if (role === 'interceptor') {

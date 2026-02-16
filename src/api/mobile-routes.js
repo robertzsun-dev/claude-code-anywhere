@@ -207,6 +207,7 @@ function createMobileRoutes(deps) {
         }
 
         // GET /api/sessions/:id/history - Get session history
+        // Converts intercept events into the HistoryItem format the mobile app expects
         const historyMatch = path.match(/^\/api\/sessions\/([^/]+)\/history$/);
         if (method === 'GET' && historyMatch) {
             const sessionId = historyMatch[1];
@@ -217,19 +218,11 @@ function createMobileRoutes(deps) {
                 return true;
             }
 
-            const format = url.searchParams.get('format') || 'raw';
             const limit = parseInt(url.searchParams.get('limit') || '100');
+            const events = (session.events || []).slice(-limit);
 
-            let history = session.history.slice(-limit);
-
-            if (format === 'parsed') {
-                // Return simplified parsed history for conversation view
-                history = history.map(h => ({
-                    type: h.type,
-                    data: stripAnsiCodes(h.data),
-                    timestamp: h.timestamp
-                }));
-            }
+            // Map intercept events to the HistoryItem shape: {type, data, timestamp}
+            const history = eventsToHistory(events);
 
             sendJson(res, 200, { history });
             return true;
@@ -389,6 +382,62 @@ function createMobileRoutes(deps) {
         // Route not handled
         return false;
     };
+}
+
+/**
+ * Convert intercept events to the HistoryItem format expected by the mobile app.
+ * Extracts readable text from structured API events.
+ */
+function eventsToHistory(events) {
+    const items = [];
+    for (const evt of events) {
+        const ts = evt.ts ? new Date(evt.ts).toISOString() : new Date().toISOString();
+        switch (evt.type) {
+            case 'api_request': {
+                // Show the user's message from the request
+                const last = evt.data?.last_turn;
+                if (last) {
+                    items.push({ type: 'input', data: last, timestamp: ts });
+                }
+                break;
+            }
+            case 'sse_event': {
+                // Extract text from streaming deltas
+                if (evt.event === 'content_block_delta' && evt.data) {
+                    try {
+                        const parsed = typeof evt.data === 'string' ? JSON.parse(evt.data) : evt.data;
+                        const text = parsed?.delta?.text;
+                        if (text) {
+                            items.push({ type: 'output', data: text, timestamp: ts });
+                        }
+                    } catch (_) {
+                        // Ignore unparseable deltas
+                    }
+                }
+                break;
+            }
+            case 'api_response': {
+                // Non-streaming response text
+                const content = evt.data?.content;
+                if (Array.isArray(content)) {
+                    const text = content
+                        .filter(b => b.type === 'text')
+                        .map(b => b.text)
+                        .join('\n');
+                    if (text) {
+                        items.push({ type: 'output', data: text, timestamp: ts });
+                    }
+                }
+                break;
+            }
+            case 'api_error': {
+                items.push({ type: 'output', data: `Error: ${evt.error || 'unknown'}`, timestamp: ts });
+                break;
+            }
+            // Skip heartbeat, metadata, etc.
+        }
+    }
+    return items;
 }
 
 /**
