@@ -1,24 +1,23 @@
-# Seamless Claude Code Wrapper
+# Claude Code API Interceptor Shim
 
-This directory contains the seamless wrapper system that makes Claude Code automatically connect to the remote access server without changing your workflow.
+This directory contains the shim system that transparently intercepts Claude Code's API calls for remote viewing and control.
 
-## What It Does
+## How It Works
 
-The seamless wrapper intercepts the `claude` command and:
+The shim intercepts the `claude` command and:
 
-1. **Checks if the session server is running**
-2. **If yes**: Launches claude through the remote access wrapper (enables remote viewing/control)
-3. **If no**: Runs the original claude command normally
+1. **Checks if the session server is running** (< 0.5s health check)
+2. **If yes**: Injects the API interceptor via `NODE_OPTIONS="--require intercept.cjs"`
+3. **If no**: Runs the original `claude` command directly
 
-This means you can:
-- Type `claude` as usual
-- IDE integrations work unchanged
-- All sessions automatically become remotely accessible (when server is running)
-- No change needed to your workflow
+Unlike the old PTY wrapper approach, the interceptor:
+- Runs inside Claude Code's own Node.js process (no wrapper process)
+- Captures structured API data (requests, SSE events, responses)
+- Supports remote input via stdin injection
+- Leaves Claude Code's terminal UI completely untouched
+- Survives Claude Code UI upgrades
 
 ## Installation
-
-### Automatic Install
 
 ```bash
 cd ~/claude-code-anywhere/shim
@@ -26,30 +25,20 @@ cd ~/claude-code-anywhere/shim
 ```
 
 This will:
-1. Find your current `claude` binary
-2. Rename it to `claude-original`
-3. Install the wrapper shim as `claude`
-4. Create a config file at `~/.claude-remote.conf`
-5. **Optionally** install the server as a systemd service (auto-start on boot)
+1. Install the shim to `/usr/local/bin/claude`
+2. Create a config file at `~/.claude-remote.conf`
+3. Optionally add shell integration to your rc file
 
 ### What Gets Changed
 
-**Before installation:**
-```
-/opt/node22/bin/claude  → Real claude binary
-```
+The shim is installed to `/usr/local/bin/claude`, which takes priority in PATH over the real claude binary. No renaming of the original binary is needed.
 
-**After installation:**
 ```
-/opt/node22/bin/claude           → Shim script (checks for server)
-/opt/node22/bin/claude-original  → Real claude binary (renamed)
+/usr/local/bin/claude  → Shim script (checks for server, injects interceptor)
+/path/to/real/claude   → Original binary (found dynamically via PATH)
 ```
-
-The shim is transparent - it passes all arguments and behaves exactly like claude.
 
 ## Usage
-
-### Normal Usage (no changes needed!)
 
 ```bash
 # Just use claude as normal
@@ -58,184 +47,47 @@ claude
 # With arguments
 claude chat
 
-# IDE integration - works unchanged
-# VSCode, JetBrains, etc. all work normally
+# IDE integration works unchanged
 ```
 
 ### Behavior
 
 **When server is running:**
-```bash
-# Terminal 1: Start server
-cd ~/claude-code-anywhere
-npm run server
-
-# Terminal 2: Use claude normally
-claude
-# → Automatically wrapped, session appears in server!
-
-# Terminal 3: Connect remotely
-Open http://localhost:8085 in browser
-Open http://localhost:8085 in browser
-```
+- Shim detects server via health check
+- Injects `intercept.cjs` via `NODE_OPTIONS`
+- Claude Code runs normally with interceptor capturing API traffic
+- Session appears in the web viewer at `http://localhost:8085`
+- Remote users can view output and send input
 
 **When server is NOT running:**
-```bash
-# Server not running
-claude
-# → Runs original claude directly, no remote access
-```
+- Shim runs original claude directly
+- Zero overhead, no interception
 
 ### Configuration
 
 Edit `~/.claude-remote.conf`:
 
 ```bash
-# Server URL
-export CLAUDE_REMOTE_SERVER=ws://localhost:8085
-
-# Auto-connect (set to false to disable wrapper)
+# Auto-connect to server (set to false to disable)
 export CLAUDE_AUTO_CONNECT=true
 
 # Claude remote directory
 export CLAUDE_REMOTE_DIR=~/claude-code-anywhere
+
+# Debug interceptor
+# export CLAUDE_INTERCEPT_DEBUG=1
 ```
 
-Then source it in your shell config:
+### Environment Variables
 
-```bash
-# Add to ~/.bashrc or ~/.zshrc
-source ~/.claude-remote.conf
-```
-
-### Disable Auto-Connect
-
-If you want to temporarily disable the wrapper:
-
-```bash
-# Disable for current session
-export CLAUDE_AUTO_CONNECT=false
-claude
-
-# Or permanently in ~/.claude-remote.conf
-export CLAUDE_AUTO_CONNECT=false
-```
-
-## IDE Integration
-
-The seamless wrapper works with all IDE integrations because it transparently replaces the `claude` command.
-
-### VSCode
-
-No changes needed - Claude Code extension will work normally:
-- Command palette: "Claude Code"
-- Terminal integration
-- All features work and become remotely accessible
-
-### JetBrains (IntelliJ, PyCharm, etc.)
-
-No changes needed - the Claude Code plugin will work normally and sessions become remotely accessible.
-
-### Terminal-based IDEs (vim, emacs, etc.)
-
-No changes needed - any tool that launches `claude` will work normally.
-
-## How It Works
-
-### The Shim Script
-
-```bash
-#!/usr/bin/env bash
-
-# 1. Check if server is running (quick TCP connection test)
-if timeout 0.5 bash -c "cat < /dev/null > /dev/tcp/localhost/8085 2>/dev/null"; then
-    server_running=true
-fi
-
-# 2. Route based on server status
-if [ "$server_running" = "true" ]; then
-    # Run through wrapper (enables remote access)
-    export CLAUDE_SEAMLESS_MODE=true
-    exec node wrapper.js "$@"
-else
-    # Run original claude directly
-    exec claude-original "$@"
-fi
-```
-
-### Seamless Mode
-
-When launched through the shim, the wrapper runs in "seamless mode":
-- No wrapper status messages shown
-- Only Claude Code's actual output is displayed
-- Session ID logged to server (visible in `Open http://localhost:8085 in browser`)
-- Completely transparent to the user
-
-### Performance
-
-- Server check: < 0.5 seconds timeout
-- If server running: Same performance as manual wrapper
-- If server not running: Same as original claude (no overhead)
-
-## Systemd Service (Optional)
-
-During installation, you can optionally install the server as a systemd service for automatic startup:
-
-### Benefits
-
-- **Auto-start on boot**: Server starts automatically when system boots
-- **Automatic restart**: If server crashes, systemd restarts it
-- **Easy management**: Use standard systemd commands
-- **Logging**: Integrated with journald
-
-### Installation
-
-When running `./install.sh`, answer **yes** when asked:
-
-```
-Install systemd service? [y/N] y
-Enable service to start on boot? [Y/n] Y
-Start service now? [Y/n] Y
-```
-
-### Service Commands
-
-```bash
-# Status
-sudo systemctl status claude-remote-server.service
-
-# Start/stop/restart
-sudo systemctl start claude-remote-server.service
-sudo systemctl stop claude-remote-server.service
-sudo systemctl restart claude-remote-server.service
-
-# Enable/disable auto-start on boot
-sudo systemctl enable claude-remote-server.service
-sudo systemctl disable claude-remote-server.service
-
-# View logs
-sudo journalctl -u claude-remote-server.service -f
-```
-
-### Manual Installation
-
-If you skipped systemd during install, you can manually install it later:
-
-```bash
-# Copy the service file
-sudo cp ~/claude-code-anywhere/examples/claude-remote.service \
-  /etc/systemd/system/claude-remote-server.service
-
-# Edit paths if needed
-sudo nano /etc/systemd/system/claude-remote-server.service
-
-# Reload systemd
-sudo systemctl daemon-reload
-
-# Enable and start
-sudo systemctl enable claude-remote-server.service
-sudo systemctl start claude-remote-server.service
-```
+| Variable | Default | Description |
+|---|---|---|
+| `CLAUDE_AUTO_CONNECT` | `true` | Enable/disable auto-connect |
+| `CLAUDE_REMOTE_SERVER` | auto-detected | Server URL (`ws://` or `wss://`) |
+| `CLAUDE_REMOTE_DIR` | `~/claude-code-anywhere` | Project directory |
+| `CLAUDE_INTERCEPT` | (unset) | Set to `0` to disable interception |
+| `CLAUDE_INTERCEPT_DEBUG` | (unset) | Set to `1` for debug output |
+| `CLAUDE_ORIGINAL` | (auto-detected) | Override path to original claude binary |
 
 ## Uninstallation
 
@@ -245,91 +97,9 @@ cd ~/claude-code-anywhere/shim
 ```
 
 This will:
-1. Remove the shim script
-2. Restore `claude-original` to `claude`
-3. **Optionally** remove the systemd service (if installed)
-4. Return to original setup
-
-The config file (`~/.claude-remote.conf`) is preserved.
-
-## Advanced Configuration
-
-### Remote Server
-
-To use a remote server:
-
-```bash
-# Edit ~/.claude-remote.conf
-export CLAUDE_REMOTE_SERVER=ws://192.168.1.100:8085
-
-# All claude sessions now connect to remote server
-```
-
-### Multiple Environments
-
-You can have different configs for different projects:
-
-```bash
-# Project-specific config
-cd ~/my-project
-cat > .claude-remote.conf << EOF
-export CLAUDE_REMOTE_SERVER=ws://project-server:8085
-export CLAUDE_AUTO_CONNECT=true
-EOF
-
-# Use in this directory
-source .claude-remote.conf
-claude
-```
-
-### Debugging
-
-To see what the shim is doing:
-
-```bash
-# Check server connectivity
-timeout 0.5 bash -c "cat < /dev/null > /dev/tcp/localhost/8085 2>/dev/null" && echo "Server running" || echo "Server not running"
-
-# Check which claude is being used
-which claude
-readlink -f $(which claude)
-
-# Verify backup exists
-ls -la /opt/node22/bin/claude*
-```
-
-## Troubleshooting
-
-### "claude: command not found"
-
-The shim may not be in PATH. Check:
-
-```bash
-which claude
-# Should show: /opt/node22/bin/claude or similar
-
-echo $PATH
-# Should include /opt/node22/bin
-```
-
-### Server check too slow
-
-The shim checks server connectivity with 0.5s timeout. To adjust:
-
-Edit the installed shim and change:
-```bash
-timeout 0.5 bash -c ...
-# to
-timeout 0.1 bash -c ...
-```
-
-### Wrapper messages showing
-
-Make sure `CLAUDE_SEAMLESS_MODE=true` is set in the shim script.
-
-### IDE not picking up changes
-
-Restart the IDE after installation.
+1. Remove the shim from `/usr/local/bin/claude`
+2. Optionally remove the systemd service
+3. Leave config file and original claude untouched
 
 ## Files
 
@@ -338,65 +108,38 @@ Restart the IDE after installation.
 - `uninstall.sh` - Uninstallation script
 - `README.md` - This file
 
-## Security Notes
+## Troubleshooting
 
-The shim script:
-- Only checks localhost by default
-- Doesn't expose credentials
-- Passes all args transparently
-- Uses `exec` to replace itself (no wrapper process remains)
+### "claude: command not found"
 
-For remote servers, use:
-- VPN for secure connections
-- TLS (`wss://`) for encrypted transport
-- Firewall rules to restrict access
+The original binary may not be in PATH after removing the shim:
+```bash
+which claude
+echo $PATH
+```
 
-## Examples
+### Server check too slow
 
-### Example 1: Local Development
+Adjust the timeout in the installed shim at `/usr/local/bin/claude`:
+```bash
+timeout 0.5 bash -c ...
+# Change 0.5 to a lower value like 0.1
+```
+
+### Debug the interceptor
 
 ```bash
-# Start server
-npm run server
-
-# Use claude normally (auto-wrapped)
+export CLAUDE_INTERCEPT_DEBUG=1
 claude
-
-# Connect from another terminal
-Open http://localhost:8085 in browser
+# Watch stderr for interceptor debug messages
 ```
 
-### Example 2: Remote Team Collaboration
+### Temporarily disable interception
 
 ```bash
-# On server (192.168.1.100)
-npm run server
+# For one session
+CLAUDE_INTERCEPT=0 claude
 
-# On developer machine
-export CLAUDE_REMOTE_SERVER=ws://192.168.1.100:8085
-claude
-
-# Teammate connects remotely
-export CLAUDE_REMOTE_SERVER=ws://192.168.1.100:8085
-Open http://localhost:8085 in browser
-Open http://localhost:8085 in browser
+# Or disable auto-connect
+CLAUDE_AUTO_CONNECT=false claude
 ```
-
-### Example 3: Selective Enabling
-
-```bash
-# Normally disabled
-export CLAUDE_AUTO_CONNECT=false
-
-# Enable for specific session
-CLAUDE_AUTO_CONNECT=true claude
-```
-
-## Future Enhancements
-
-Potential improvements:
-- [ ] Auto-start server if not running
-- [ ] Session persistence/reconnection
-- [ ] Multiple server support (round-robin)
-- [ ] Health check caching
-- [ ] Background server status daemon
