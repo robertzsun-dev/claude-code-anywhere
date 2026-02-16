@@ -174,7 +174,7 @@ function createMobileRoutes(deps) {
                     created: session.created,
                     lastActivity: session.lastActivity,
                     metadata: session.metadata,
-                    waitingState: session.inputDetector ? session.inputDetector.getState() : null,
+                    waitingState: null,
                     subscribed: device.subscribedSessions.has(id)
                 });
             }
@@ -199,7 +199,7 @@ function createMobileRoutes(deps) {
                     created: session.created,
                     lastActivity: session.lastActivity,
                     metadata: session.metadata,
-                    waitingState: session.inputDetector ? session.inputDetector.getState() : null,
+                    waitingState: null,
                     subscribed: device.subscribedSessions.has(sessionId)
                 }
             });
@@ -271,8 +271,8 @@ function createMobileRoutes(deps) {
                 return true;
             }
 
-            if (!session.wrapperWs) {
-                sendJson(res, 400, { error: 'Session has no active wrapper' });
+            if (!session.interceptorWs) {
+                sendJson(res, 400, { error: 'Session has no active interceptor' });
                 return true;
             }
 
@@ -303,16 +303,11 @@ function createMobileRoutes(deps) {
                     }
                 }
 
-                // Send to wrapper
-                session.wrapperWs.send(JSON.stringify({
+                // Send to interceptor for stdin injection
+                session.interceptorWs.send(JSON.stringify({
                     type: 'input',
                     data
                 }));
-
-                // Clear waiting state
-                if (session.inputDetector) {
-                    session.inputDetector.handleInput();
-                }
 
                 // Clear badge
                 if (fcmService && fcmService.isEnabled()) {
@@ -337,8 +332,8 @@ function createMobileRoutes(deps) {
                 return true;
             }
 
-            if (!session.wrapperWs) {
-                sendJson(res, 400, { error: 'Session has no active wrapper' });
+            if (!session.interceptorWs) {
+                sendJson(res, 400, { error: 'Session has no active interceptor' });
                 return true;
             }
 
@@ -369,14 +364,10 @@ function createMobileRoutes(deps) {
                         return true;
                 }
 
-                session.wrapperWs.send(JSON.stringify({
+                session.interceptorWs.send(JSON.stringify({
                     type: 'input',
                     data
                 }));
-
-                if (session.inputDetector) {
-                    session.inputDetector.handleInput();
-                }
 
                 if (fcmService && fcmService.isEnabled()) {
                     fcmService.clearBadge(device);

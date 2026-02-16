@@ -19,7 +19,6 @@ import { fileURLToPath } from 'url';
 import os from 'os';
 
 // Mobile app support modules
-import { InputDetector } from './detection/input-detector.js';
 import { DeviceRegistry } from './devices/device-registry.js';
 import { FCMService } from './push/fcm-service.js';
 import { createMobileRoutes } from './api/mobile-routes.js';
@@ -38,9 +37,8 @@ const clients = new Map();
 // PID-to-session index: Map<pid, sessionId> for reconnection by PID
 const pidIndex = new Map();
 
-// Grace periods before reaping disconnected sessions
-const PTY_GRACE_PERIOD = 30_000;        // 30 seconds for PTY sessions
-const INTERCEPT_GRACE_PERIOD = 300_000; // 5 minutes for intercept sessions
+// Grace period before reaping disconnected sessions
+const INTERCEPT_GRACE_PERIOD = 300_000; // 5 minutes
 
 // WebSocket ping/pong settings
 const WS_PING_INTERVAL = 30_000;  // Ping every 30s; dead if no pong by next sweep
@@ -83,79 +81,18 @@ const handleMobileRoute = createMobileRoutes({
   getServerUrl
 });
 
-// Send push notification to subscribed devices when input is detected
-async function notifyDevicesOfWaiting(waitingInfo) {
-  if (!fcmService.isEnabled()) return;
-
-  const devices = deviceRegistry.getDevicesForSession(waitingInfo.sessionId);
-  for (const device of devices) {
-    const result = await fcmService.sendWaitingNotification(device, waitingInfo);
-    if (result.shouldRemove) {
-      // Invalid token, remove the FCM token
-      deviceRegistry.updateFcmToken(device.deviceId, null);
-    }
-  }
-}
-
 /**
  * Session structure:
  * {
  *   id: string,
- *   type: 'pty' | 'intercept',
+ *   type: 'intercept',
  *   created: Date,
  *   lastActivity: Date,
- *   wrapperWs: WebSocket,           // for PTY sessions
- *   interceptorWs: WebSocket,       // for intercept sessions
+ *   interceptorWs: WebSocket,
  *   metadata: { cwd, pid, ... },
- *   history: Array<{type, data, timestamp}>,  // for PTY sessions
- *   events: Array<{type, ts, ...}>,           // for intercept sessions (structured API events)
- *   inputDetector: InputDetector
+ *   events: Array<{type, ts, ...}>,  // Structured API events (SSE, requests, responses)
  * }
  */
-
-function createSession(wrapperWs, metadata) {
-  const id = crypto.randomBytes(8).toString('hex');
-
-  // Create input detector for this session
-  const inputDetector = new InputDetector(id, {
-    onWaitingDetected: (waitingInfo) => {
-      console.log(`[Session ${id}] Waiting for input:`, waitingInfo.reason);
-      // Notify subscribed mobile devices
-      notifyDevicesOfWaiting(waitingInfo);
-      // Broadcast to WebSocket viewers
-      broadcastToSession(id, {
-        type: 'waiting-for-input',
-        sessionId: id,
-        reason: waitingInfo.reason,
-        quickActions: waitingInfo.quickActions,
-        context: waitingInfo.context
-      });
-    },
-    onWaitingCleared: (info) => {
-      console.log(`[Session ${id}] Input received, waiting cleared`);
-      broadcastToSession(id, {
-        type: 'waiting-cleared',
-        sessionId: id
-      });
-    }
-  });
-
-  const session = {
-    id,
-    type: 'pty',
-    created: new Date(),
-    lastActivity: new Date(),
-    wrapperWs,
-    metadata: metadata || {},
-    history: [], // Keep last 10000 lines for new clients
-    maxHistory: 10000,
-    inputDetector
-  };
-
-  sessions.set(id, session);
-  console.log(`[Session] Created PTY session ${id}`);
-  return session;
-}
 
 function createInterceptSession(interceptorWs, metadata) {
   const id = crypto.randomBytes(8).toString('hex');
@@ -195,19 +132,6 @@ function findSessionByPid(pid) {
   // Clean up stale index entry
   if (sessionId) pidIndex.delete(Number(pid));
   return null;
-}
-
-function addToHistory(session, type, data) {
-  session.history.push({
-    type,
-    data,
-    timestamp: new Date()
-  });
-
-  // Trim history
-  if (session.history.length > session.maxHistory) {
-    session.history = session.history.slice(-session.maxHistory);
-  }
 }
 
 function addToEvents(session, event) {
@@ -290,48 +214,6 @@ function broadcastToSession(sessionId, message) {
   }
 }
 
-function handleWrapperMessage(ws, clientId, message) {
-  const client = clients.get(clientId);
-  if (!client) return;
-
-  const session = sessions.get(client.sessionId);
-  if (!session) return;
-
-  session.lastActivity = new Date();
-
-  switch (message.type) {
-    case 'output':
-      // Claude Code output (stdout/stderr)
-      addToHistory(session, 'output', message.data);
-      broadcastToSession(session.id, message);
-      // Process through input detector for waiting state detection
-      if (session.inputDetector) {
-        session.inputDetector.processOutput(message.data);
-      }
-      break;
-
-    case 'metadata':
-      // Update session metadata
-      session.metadata = { ...session.metadata, ...message.data };
-      broadcastToSession(session.id, message);
-      break;
-
-    case 'exit':
-      // Session ended
-      console.log(`[Session] Session ${session.id} ended with code ${message.code}`);
-      broadcastToSession(session.id, message);
-      // Clean up input detector
-      if (session.inputDetector) {
-        session.inputDetector.destroy();
-      }
-      sessions.delete(session.id);
-      break;
-
-    default:
-      console.warn(`[Wrapper] Unknown message type: ${message.type}`);
-  }
-}
-
 function handleViewerMessage(ws, clientId, message) {
   const client = clients.get(clientId);
   if (!client) return;
@@ -342,43 +224,24 @@ function handleViewerMessage(ws, clientId, message) {
     return;
   }
 
-  // Determine which WebSocket to forward to based on session type
-  const producerWs = session.type === 'intercept' ? session.interceptorWs : session.wrapperWs;
-
-  if (!producerWs || producerWs.readyState !== 1) {
+  if (!session.interceptorWs || session.interceptorWs.readyState !== 1) {
     ws.send(JSON.stringify({ type: 'error', error: 'Session not available' }));
     return;
   }
 
   switch (message.type) {
     case 'input':
-      // Forward input to the producer (wrapper PTY or interceptor stdin injection)
-      producerWs.send(JSON.stringify({
+      // Forward input to the interceptor for stdin injection
+      session.interceptorWs.send(JSON.stringify({
         type: 'input',
         data: message.data
       }));
-
-      // Clear waiting state since user provided input
-      if (session.inputDetector) {
-        session.inputDetector.handleInput();
-      }
 
       // Also broadcast to other viewers
       broadcastToSession(session.id, {
         type: 'input-echo',
         data: message.data
       });
-      break;
-
-    case 'resize':
-      // Forward terminal resize (only relevant for PTY sessions)
-      if (session.type !== 'intercept') {
-        producerWs.send(JSON.stringify({
-          type: 'resize',
-          cols: message.cols,
-          rows: message.rows
-        }));
-      }
       break;
 
     default:
@@ -389,35 +252,12 @@ function handleViewerMessage(ws, clientId, message) {
 function handleConnection(ws, req) {
   const clientId = crypto.randomBytes(8).toString('hex');
   const url = new URL(req.url, `http://${req.headers.host}`);
-  const role = url.searchParams.get('role'); // 'wrapper' or 'viewer'
+  const role = url.searchParams.get('role');
   const sessionId = url.searchParams.get('session');
 
   console.log(`[Server] New connection: ${clientId} (role: ${role}, session: ${sessionId || 'new'})`);
 
-  if (role === 'wrapper') {
-    // This is a new Claude Code session
-    // Get initial dimensions from query params if provided
-    const initialMetadata = {};
-    const cols = url.searchParams.get('cols');
-    const rows = url.searchParams.get('rows');
-    if (cols) initialMetadata.cols = parseInt(cols);
-    if (rows) initialMetadata.rows = parseInt(rows);
-
-    const session = createSession(ws, initialMetadata);
-    clients.set(clientId, {
-      ws,
-      sessionId: session.id,
-      role: 'wrapper'
-    });
-
-    // Send session ID to wrapper
-    ws.send(JSON.stringify({
-      type: 'session-created',
-      sessionId: session.id,
-      serverUrl: `ws://${HOST}:${PORT}`
-    }));
-
-  } else if (role === 'viewer') {
+  if (role === 'viewer') {
     // Client wants to view/control a session
     if (!sessionId) {
       // Send list of available sessions
@@ -453,21 +293,14 @@ function handleConnection(ws, req) {
       role: 'viewer'
     });
 
-    // Send session info and history/events based on session type
-    const attachMessage = {
+    // Send session info and historical events
+    ws.send(JSON.stringify({
       type: 'session-attached',
       sessionId: session.id,
-      sessionType: session.type || 'pty',
+      sessionType: 'intercept',
       metadata: session.metadata,
-    };
-
-    if (session.type === 'intercept') {
-      attachMessage.events = session.events || [];
-    } else {
-      attachMessage.history = session.history;
-    }
-
-    ws.send(JSON.stringify(attachMessage));
+      events: session.events || [],
+    }));
 
   } else if (role === 'interceptor') {
     // This is an API interceptor (injected into Claude Code via --require)
@@ -519,7 +352,7 @@ function handleConnection(ws, req) {
   } else {
     ws.send(JSON.stringify({
       type: 'error',
-      error: 'Invalid role. Use ?role=wrapper, ?role=viewer, or ?role=interceptor'
+      error: 'Invalid role. Use ?role=viewer or ?role=interceptor'
     }));
     ws.close();
     return;
@@ -531,9 +364,7 @@ function handleConnection(ws, req) {
       const message = JSON.parse(data.toString());
       const client = clients.get(clientId);
 
-      if (client.role === 'wrapper') {
-        handleWrapperMessage(ws, clientId, message);
-      } else if (client.role === 'viewer') {
+      if (client.role === 'viewer') {
         handleViewerMessage(ws, clientId, message);
       } else if (client.role === 'interceptor') {
         handleInterceptorMessage(ws, clientId, message);
@@ -548,47 +379,37 @@ function handleConnection(ws, req) {
     console.log(`[Server] Client ${clientId} disconnected`);
     const client = clients.get(clientId);
 
-    if (client && (client.role === 'wrapper' || client.role === 'interceptor')) {
+    if (client && client.role === 'interceptor') {
       const session = sessions.get(client.sessionId);
       if (session) {
-        // IMPORTANT: Only act on this disconnect if the closing WebSocket is still
-        // the session's current producer. If an interceptor reconnects (creating a
+        // Only act on this disconnect if the closing WebSocket is still
+        // the session's current interceptor. If a reconnect happened (creating a
         // new clientId + ws), the OLD ws will eventually fire 'close'. Without this
-        // guard, the stale close handler would set a cleanup timer and reap the
-        // session even though a new interceptor is actively connected.
-        const currentWs = session.type === 'intercept' ? session.interceptorWs : session.wrapperWs;
-        if (currentWs !== ws) {
-          console.log(`[Session] Ignoring stale ${client.role} disconnect for session ${session.id} (already replaced)`);
+        // guard, the stale close handler would reap the session even though a new
+        // interceptor is actively connected.
+        if (session.interceptorWs !== ws) {
+          console.log(`[Session] Ignoring stale interceptor disconnect for session ${session.id} (already replaced)`);
         } else {
-          const roleLabel = client.role === 'wrapper' ? 'Wrapper' : 'Interceptor';
-          console.log(`[Session] ${roleLabel} disconnected for session ${session.id}`);
+          console.log(`[Session] Interceptor disconnected for session ${session.id}`);
           broadcastToSession(session.id, {
             type: 'wrapper-disconnected'
           });
-          // Use longer grace period for intercept sessions (they reconnect and carry
-          // structured data that's harder to rebuild). PTY sessions are cheaper to lose.
-          const gracePeriod = session.type === 'intercept'
-            ? INTERCEPT_GRACE_PERIOD   // 5 minutes
-            : PTY_GRACE_PERIOD;        // 30 seconds
           // Store timer so it can be cancelled on reconnection
           session._cleanupTimer = setTimeout(() => {
             if (sessions.has(client.sessionId)) {
-              // For intercept sessions, check if PID is still alive before reaping
-              if (session.type === 'intercept' && session.metadata?.pid) {
-                if (isPidAlive(session.metadata.pid)) {
-                  console.log(`[Session] PID ${session.metadata.pid} still alive, extending grace for ${session.id}`);
-                  // Process still running but WebSocket died. Extend grace period.
-                  session._cleanupTimer = setTimeout(() => {
-                    if (sessions.has(client.sessionId)) {
-                      reapSession(client.sessionId, 'grace period expired (extended)');
-                    }
-                  }, INTERCEPT_GRACE_PERIOD);
-                  return;
-                }
+              // Check if PID is still alive before reaping
+              if (session.metadata?.pid && isPidAlive(session.metadata.pid)) {
+                console.log(`[Session] PID ${session.metadata.pid} still alive, extending grace for ${session.id}`);
+                session._cleanupTimer = setTimeout(() => {
+                  if (sessions.has(client.sessionId)) {
+                    reapSession(client.sessionId, 'grace period expired (extended)');
+                  }
+                }, INTERCEPT_GRACE_PERIOD);
+                return;
               }
               reapSession(client.sessionId, 'grace period expired');
             }
-          }, gracePeriod);
+          }, INTERCEPT_GRACE_PERIOD);
         }
       }
     }
@@ -628,9 +449,6 @@ function reapSession(sessionId, reason) {
 
   // Clean up PID index
   if (session.metadata?.pid) pidIndex.delete(Number(session.metadata.pid));
-
-  // Clean up input detector
-  if (session.inputDetector) session.inputDetector.destroy();
 
   // Notify viewers
   broadcastToSession(sessionId, { type: 'session-reaped', reason });
@@ -684,8 +502,6 @@ function startSessionReaper() {
     const now = Date.now();
 
     for (const [sessionId, session] of sessions.entries()) {
-      if (session.type !== 'intercept') continue;
-
       // Check if the interceptor WebSocket is still connected
       const wsAlive = session.interceptorWs && session.interceptorWs.readyState === 1;
       if (wsAlive) continue; // Connection is fine, skip
@@ -851,9 +667,8 @@ async function handleStartSession(req, res) {
       }
 
       // Spawn Claude Code inside a tmux session with the intercept module loaded.
-      // The interceptor runs in-process via NODE_OPTIONS --require, so there's no
-      // PTY wrapper — Claude Code talks directly to the tmux PTY while the
-      // interceptor captures structured API events and enables remote stdin injection.
+      // The interceptor runs in-process via NODE_OPTIONS --require, capturing
+      // structured API events and enabling remote stdin injection.
       const interceptPath = new URL('./intercept/intercept.cjs', import.meta.url).pathname;
 
       // Get full paths to node and claude binaries
@@ -923,7 +738,7 @@ async function handleStartSession(req, res) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         success: true,
-        sessionId: 'pending',  // Session ID will be assigned by wrapper when it connects
+        sessionId: 'pending',  // Session ID will be assigned by interceptor when it connects
         tmuxSession: tmuxSessionName,
         workingDir: resolvedPath,
         message: `Session starting in ${resolvedPath}. Attach with: tmux attach -t ${tmuxSessionName}`
@@ -1034,7 +849,7 @@ async function handleHttpRequest(req, res) {
   } else if (req.url === '/sessions') {
     const sessionList = Array.from(sessions.values()).map(s => ({
       id: s.id,
-      type: s.type || 'pty',
+      type: s.type || 'intercept',
       created: s.created,
       lastActivity: s.lastActivity,
       metadata: s.metadata
@@ -1086,13 +901,6 @@ httpServer.listen(PORT, HOST, () => {
 // Graceful shutdown
 process.on('SIGINT', () => {
   console.log('\n[Server] Shutting down...');
-
-  // Clean up input detectors for all sessions
-  for (const session of sessions.values()) {
-    if (session.inputDetector) {
-      session.inputDetector.destroy();
-    }
-  }
 
   // Clean up device registry (persists devices to disk)
   deviceRegistry.destroy();

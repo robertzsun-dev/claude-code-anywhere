@@ -2,7 +2,7 @@
 
 /**
  * Server Tests
- * Tests for the WebSocket session server
+ * Tests for the WebSocket session server (intercept mode)
  */
 
 import { test, describe, before, after } from 'node:test';
@@ -51,8 +51,8 @@ describe('Server Tests', () => {
     assert.ok(Array.isArray(data.sessions));
   });
 
-  test('WebSocket connection as wrapper creates session', (t, done) => {
-    const ws = new WebSocket(`${TEST_URL}?role=wrapper`);
+  test('WebSocket connection as interceptor creates session', (t, done) => {
+    const ws = new WebSocket(`${TEST_URL}?role=interceptor&pid=99999`);
     let sessionId = null;
 
     ws.on('open', () => {
@@ -83,11 +83,11 @@ describe('Server Tests', () => {
   });
 
   test('Viewer can list sessions', async (t) => {
-    // First create a session
-    const wrapperWs = new WebSocket(`${TEST_URL}?role=wrapper`);
+    // First create a session via interceptor
+    const interceptorWs = new WebSocket(`${TEST_URL}?role=interceptor&pid=99998`);
 
     await new Promise((resolve) => {
-      wrapperWs.on('message', (data) => {
+      interceptorWs.on('message', (data) => {
         const message = JSON.parse(data.toString());
         if (message.type === 'session-created') {
           resolve();
@@ -107,16 +107,16 @@ describe('Server Tests', () => {
     assert.ok(data.sessions[0].id, 'Session has ID');
     assert.ok(data.sessions[0].created, 'Session has created timestamp');
 
-    wrapperWs.close();
+    interceptorWs.close();
   });
 
   test('Viewer can attach to session', async (t) => {
-    // Create a wrapper session
-    const wrapperWs = new WebSocket(`${TEST_URL}?role=wrapper`);
+    // Create an interceptor session
+    const interceptorWs = new WebSocket(`${TEST_URL}?role=interceptor&pid=99997`);
     let sessionId = null;
 
     await new Promise((resolve) => {
-      wrapperWs.on('message', (data) => {
+      interceptorWs.on('message', (data) => {
         const message = JSON.parse(data.toString());
         if (message.type === 'session-created') {
           sessionId = message.sessionId;
@@ -125,7 +125,7 @@ describe('Server Tests', () => {
       });
     });
 
-    assert.ok(sessionId, 'Got session ID from wrapper');
+    assert.ok(sessionId, 'Got session ID from interceptor');
 
     // Now connect as viewer
     const viewerWs = new WebSocket(`${TEST_URL}?role=viewer&session=${sessionId}`);
@@ -139,7 +139,7 @@ describe('Server Tests', () => {
           attached = true;
           assert.strictEqual(message.sessionId, sessionId);
           assert.ok(message.metadata, 'Session has metadata');
-          assert.ok(Array.isArray(message.history), 'Session has history');
+          assert.ok(Array.isArray(message.events), 'Session has events');
           resolve();
         } else if (message.type === 'error') {
           reject(new Error(message.error));
@@ -151,17 +151,17 @@ describe('Server Tests', () => {
 
     assert.ok(attached, 'Viewer attached to session');
 
-    wrapperWs.close();
+    interceptorWs.close();
     viewerWs.close();
   });
 
-  test('Messages broadcast from wrapper to viewers', async (t) => {
-    // Create wrapper session
-    const wrapperWs = new WebSocket(`${TEST_URL}?role=wrapper`);
+  test('API events broadcast from interceptor to viewers', async (t) => {
+    // Create interceptor session
+    const interceptorWs = new WebSocket(`${TEST_URL}?role=interceptor&pid=99996`);
     let sessionId = null;
 
     await new Promise((resolve) => {
-      wrapperWs.on('message', (data) => {
+      interceptorWs.on('message', (data) => {
         const message = JSON.parse(data.toString());
         if (message.type === 'session-created') {
           sessionId = message.sessionId;
@@ -182,39 +182,40 @@ describe('Server Tests', () => {
       });
     });
 
-    // Send output from wrapper
-    const testOutput = 'Hello from test!';
-    let receivedOutput = false;
+    // Send API request event from interceptor
+    const testEvent = {
+      type: 'api_request',
+      ts: Date.now(),
+      data: { model: 'claude-sonnet-4-5-20250929', messages_count: 1 }
+    };
+    let receivedEvent = false;
 
-    const outputPromise = new Promise((resolve) => {
+    const eventPromise = new Promise((resolve) => {
       viewerWs.on('message', (data) => {
         const message = JSON.parse(data.toString());
-        if (message.type === 'output' && message.data === testOutput) {
-          receivedOutput = true;
+        if (message.type === 'api_request') {
+          receivedEvent = true;
           resolve();
         }
       });
     });
 
-    wrapperWs.send(JSON.stringify({
-      type: 'output',
-      data: testOutput
-    }));
+    interceptorWs.send(JSON.stringify(testEvent));
 
-    await outputPromise;
-    assert.ok(receivedOutput, 'Viewer received output from wrapper');
+    await eventPromise;
+    assert.ok(receivedEvent, 'Viewer received API event from interceptor');
 
-    wrapperWs.close();
+    interceptorWs.close();
     viewerWs.close();
   });
 
-  test('Session history is preserved and sent to new viewers', async (t) => {
-    // Create wrapper and send some output
-    const wrapperWs = new WebSocket(`${TEST_URL}?role=wrapper`);
+  test('Session events are preserved and sent to new viewers', async (t) => {
+    // Create interceptor and send some events
+    const interceptorWs = new WebSocket(`${TEST_URL}?role=interceptor&pid=99995`);
     let sessionId = null;
 
     await new Promise((resolve) => {
-      wrapperWs.on('message', (data) => {
+      interceptorWs.on('message', (data) => {
         const message = JSON.parse(data.toString());
         if (message.type === 'session-created') {
           sessionId = message.sessionId;
@@ -223,13 +224,14 @@ describe('Server Tests', () => {
       });
     });
 
-    // Send multiple outputs
-    const outputs = ['Line 1', 'Line 2', 'Line 3'];
-    for (const output of outputs) {
-      wrapperWs.send(JSON.stringify({
-        type: 'output',
-        data: output
-      }));
+    // Send multiple events
+    const events = [
+      { type: 'api_request', ts: Date.now(), data: { model: 'test', messages_count: 1 } },
+      { type: 'sse_event', ts: Date.now(), event: 'message_start', data: '{}' },
+      { type: 'api_response', ts: Date.now(), data: { content: [] } },
+    ];
+    for (const event of events) {
+      interceptorWs.send(JSON.stringify(event));
     }
 
     // Wait for messages to be processed
@@ -237,28 +239,27 @@ describe('Server Tests', () => {
 
     // Now connect as viewer
     const viewerWs = new WebSocket(`${TEST_URL}?role=viewer&session=${sessionId}`);
-    let history = null;
+    let receivedEvents = null;
 
     await new Promise((resolve) => {
       viewerWs.on('message', (data) => {
         const message = JSON.parse(data.toString());
         if (message.type === 'session-attached') {
-          history = message.history;
+          receivedEvents = message.events;
           resolve();
         }
       });
     });
 
-    assert.ok(Array.isArray(history), 'History is an array');
-    assert.strictEqual(history.length, outputs.length, 'All outputs in history');
+    assert.ok(Array.isArray(receivedEvents), 'Events is an array');
+    assert.strictEqual(receivedEvents.length, events.length, 'All events preserved');
 
-    // Verify each output
-    for (let i = 0; i < outputs.length; i++) {
-      assert.strictEqual(history[i].type, 'output');
-      assert.strictEqual(history[i].data, outputs[i]);
-    }
+    // Verify event types
+    assert.strictEqual(receivedEvents[0].type, 'api_request');
+    assert.strictEqual(receivedEvents[1].type, 'sse_event');
+    assert.strictEqual(receivedEvents[2].type, 'api_response');
 
-    wrapperWs.close();
+    interceptorWs.close();
     viewerWs.close();
   });
 
