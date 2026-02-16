@@ -342,23 +342,18 @@ function handleViewerMessage(ws, clientId, message) {
     return;
   }
 
-  // For intercept sessions, input forwarding is not yet supported
-  if (session.type === 'intercept') {
-    if (message.type === 'input') {
-      ws.send(JSON.stringify({ type: 'error', error: 'Input not supported for intercept sessions (observe only)' }));
-    }
-    return;
-  }
+  // Determine which WebSocket to forward to based on session type
+  const producerWs = session.type === 'intercept' ? session.interceptorWs : session.wrapperWs;
 
-  if (!session.wrapperWs || session.wrapperWs.readyState !== 1) {
+  if (!producerWs || producerWs.readyState !== 1) {
     ws.send(JSON.stringify({ type: 'error', error: 'Session not available' }));
     return;
   }
 
   switch (message.type) {
     case 'input':
-      // Forward input to the wrapper (and thus to Claude Code)
-      session.wrapperWs.send(JSON.stringify({
+      // Forward input to the producer (wrapper PTY or interceptor stdin injection)
+      producerWs.send(JSON.stringify({
         type: 'input',
         data: message.data
       }));
@@ -376,12 +371,14 @@ function handleViewerMessage(ws, clientId, message) {
       break;
 
     case 'resize':
-      // Forward terminal resize
-      session.wrapperWs.send(JSON.stringify({
-        type: 'resize',
-        cols: message.cols,
-        rows: message.rows
-      }));
+      // Forward terminal resize (only relevant for PTY sessions)
+      if (session.type !== 'intercept') {
+        producerWs.send(JSON.stringify({
+          type: 'resize',
+          cols: message.cols,
+          rows: message.rows
+        }));
+      }
       break;
 
     default:
@@ -853,17 +850,15 @@ async function handleStartSession(req, res) {
         return;
       }
 
-      // Spawn wrapper.js inside a tmux session
-      // This way the session runs in tmux (can be attached to) but wrapper works normally
-      const wrapperPath = new URL('./wrapper.js', import.meta.url).pathname;
+      // Spawn Claude Code inside a tmux session with the intercept module loaded.
+      // The interceptor runs in-process via NODE_OPTIONS --require, so there's no
+      // PTY wrapper — Claude Code talks directly to the tmux PTY while the
+      // interceptor captures structured API events and enables remote stdin injection.
+      const interceptPath = new URL('./intercept/intercept.cjs', import.meta.url).pathname;
 
       // Get full paths to node and claude binaries
-      // Claude is usually in the same directory as node (when installed via npm global)
       const nodePath = process.execPath;
       const nodeBinDir = dirname(nodePath);
-
-      // Always use full path to claude (ignore the command parameter for now)
-      // This ensures it works with nvm and other non-standard installations
       const claudeCmd = join(nodeBinDir, 'claude');
 
       const tmuxArgs = [
@@ -878,14 +873,10 @@ async function handleStartSession(req, res) {
         tmuxArgs.push('-x', cols.toString(), '-y', rows.toString());
       }
 
-      // The command to run inside tmux: run wrapper with proper environment
-      // Use -l flag to make bash a login shell, which sources .profile/.bashrc
-      // This ensures all environment variables (HOME, USER, etc.) are set
-      // Add node bin directory to PATH so claude's shebang (#!/usr/bin/env node) works
+      // Run claude directly with the intercept module injected via NODE_OPTIONS
       const wsProtocol = USE_HTTPS ? 'wss' : 'ws';
-      // Allow self-signed certificates for wss:// connections
       const tlsReject = USE_HTTPS ? 'NODE_TLS_REJECT_UNAUTHORIZED=0 ' : '';
-      const shellCommand = `export PATH="${nodeBinDir}:$PATH"; ${tlsReject}CLAUDE_CMD=${claudeCmd} CLAUDE_SEAMLESS_MODE=true CLAUDE_REMOTE_SERVER=${wsProtocol}://${HOST}:${PORT} CLAUDE_COLS=${cols || 80} CLAUDE_ROWS=${rows || 24} exec ${nodePath} ${wrapperPath}`;
+      const shellCommand = `export PATH="${nodeBinDir}:$PATH"; ${tlsReject}CLAUDE_INTERCEPT_SERVER=${wsProtocol}://${HOST}:${PORT} NODE_OPTIONS="--require ${interceptPath}" exec ${claudeCmd}`;
 
       tmuxArgs.push('/bin/bash', '-l', '-c', shellCommand);
 

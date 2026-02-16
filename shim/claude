@@ -26,13 +26,15 @@ fi
 # Use detected protocol or environment variable
 SERVER_URL="${CLAUDE_REMOTE_SERVER:-${detected_protocol}://localhost:8085}"
 
-# If server is running and we have node wrapper, use it
-if [ "$server_running" = "true" ] && [ -f "$CLAUDE_REMOTE_DIR/src/wrapper.js" ]; then
-    # Run through the wrapper to enable remote access
-    export CLAUDE_CMD="$CLAUDE_ORIGINAL"
-    export CLAUDE_REMOTE_SERVER="$SERVER_URL"
-    export CLAUDE_SEAMLESS_MODE="true"
-    exec node "$CLAUDE_REMOTE_DIR/src/wrapper.js" "$@"
+# If server is running and we have the intercept module, use it
+if [ "$server_running" = "true" ] && [ -f "$CLAUDE_REMOTE_DIR/src/intercept/intercept.cjs" ]; then
+    # Run claude directly with the API interceptor loaded via --require.
+    # This injects into the same process (no PTY, no wrapper) and enables:
+    #   - Structured API event capture (requests, SSE, responses)
+    #   - Remote stdin injection from the web viewer
+    export CLAUDE_INTERCEPT_SERVER="$SERVER_URL"
+    export NODE_OPTIONS="--require $CLAUDE_REMOTE_DIR/src/intercept/intercept.cjs${NODE_OPTIONS:+ $NODE_OPTIONS}"
+    exec "$CLAUDE_ORIGINAL" "$@"
 else
     # Server not running or auto-connect disabled, run original claude directly
     exec "$CLAUDE_ORIGINAL" "$@"

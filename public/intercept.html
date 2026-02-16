@@ -384,6 +384,64 @@
       flex-shrink: 0;
     }
 
+    /* --- Input bar --- */
+    .input-bar {
+      background: var(--bg-secondary);
+      border-top: 1px solid var(--border);
+      padding: 8px 16px;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-shrink: 0;
+    }
+
+    .input-bar input {
+      flex: 1;
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 12px;
+      color: var(--text);
+      font-size: 14px;
+      font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+      outline: none;
+    }
+    .input-bar input:focus { border-color: var(--accent-blue); }
+    .input-bar input:disabled { opacity: 0.5; }
+
+    .input-bar .send-btn {
+      background: var(--accent-blue);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 8px 16px;
+      font-size: 13px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .input-bar .send-btn:hover { opacity: 0.9; }
+    .input-bar .send-btn:disabled { opacity: 0.4; cursor: default; }
+
+    .quick-actions {
+      display: flex;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    .quick-actions button {
+      background: var(--bg-tertiary);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 6px 10px;
+      font-size: 12px;
+      font-family: monospace;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .quick-actions button:hover { background: var(--border); }
+    .quick-actions button:disabled { opacity: 0.4; cursor: default; }
+
     /* --- Scrollbar --- */
     ::-webkit-scrollbar { width: 6px; }
     ::-webkit-scrollbar-track { background: transparent; }
@@ -438,6 +496,19 @@
       <span>Output tokens: <strong id="statOutputTokens">0</strong></span>
       <span>API calls: <strong id="statApiCalls">0</strong></span>
       <span>Tool calls: <strong id="statToolCalls">0</strong></span>
+    </div>
+
+    <div class="input-bar" id="inputBar" style="display: none;">
+      <div class="quick-actions">
+        <button onclick="sendInput('y\n')" id="btnY" disabled>y</button>
+        <button onclick="sendInput('n\n')" id="btnN" disabled>n</button>
+        <button onclick="sendInput('1')" id="btn1" disabled>1</button>
+        <button onclick="sendInput('2')" id="btn2" disabled>2</button>
+        <button onclick="sendInput('3')" id="btn3" disabled>3</button>
+        <button onclick="sendInput('\x1b')" id="btnEsc" disabled>Esc</button>
+      </div>
+      <input type="text" id="inputField" placeholder="Type input for Claude Code..." disabled />
+      <button class="send-btn" id="sendBtn" onclick="sendInputFromField()" disabled>Send</button>
     </div>
   </div>
 </div>
@@ -552,6 +623,7 @@
     conversationEl.innerHTML = '';
     infoBar.style.display = 'flex';
     statsBar.style.display = 'flex';
+    document.getElementById('inputBar').style.display = 'flex';
     infoSession.textContent = sessionId.slice(0, 8);
 
     const url = `${getWsUrl()}/?role=viewer&session=${sessionId}`;
@@ -559,14 +631,17 @@
 
     ws.onopen = () => {
       setStatus('connected', 'Connected');
+      setInputEnabled(true);
     };
 
     ws.onclose = () => {
       setStatus('disconnected', 'Disconnected');
+      setInputEnabled(false);
     };
 
     ws.onerror = () => {
       setStatus('disconnected', 'Connection error');
+      setInputEnabled(false);
     };
 
     ws.onmessage = (evt) => {
@@ -607,11 +682,21 @@
       case 'metadata':
         handleMetadata(msg);
         break;
+      case 'input-echo':
+        // Input from another viewer - show it
+        if (msg.data) appendSystemMessage(`Remote input: ${msg.data.replace(/\n/g, '\\n')}`);
+        break;
       case 'wrapper-disconnected':
         appendSystemMessage('Session disconnected');
+        setInputEnabled(false);
+        break;
+      case 'interceptor-reconnected':
+        appendSystemMessage('Session reconnected');
+        setInputEnabled(true);
         break;
       case 'exit':
         appendSystemMessage(`Session ended (code: ${msg.code || 0})`);
+        setInputEnabled(false);
         break;
       case 'error':
         appendSystemMessage(`Error: ${msg.error}`);
@@ -1058,6 +1143,39 @@
     const threshold = 50;
     const atBottom = conversationEl.scrollHeight - conversationEl.scrollTop - conversationEl.clientHeight < threshold;
     autoScroll = atBottom;
+  });
+
+  // --- Input Handling ---
+  const inputBar = document.getElementById('inputBar');
+  const inputField = document.getElementById('inputField');
+  const sendBtn = document.getElementById('sendBtn');
+  const quickBtns = ['btnY', 'btnN', 'btn1', 'btn2', 'btn3', 'btnEsc'].map(id => document.getElementById(id));
+
+  function setInputEnabled(enabled) {
+    inputField.disabled = !enabled;
+    sendBtn.disabled = !enabled;
+    quickBtns.forEach(btn => { if (btn) btn.disabled = !enabled; });
+  }
+
+  // Expose to onclick handlers on quick-action buttons
+  window.sendInput = function(data) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({ type: 'input', data: data }));
+  };
+
+  window.sendInputFromField = function() {
+    const text = inputField.value;
+    if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
+    // Send text + newline (simulates pressing Enter)
+    ws.send(JSON.stringify({ type: 'input', data: text + '\n' }));
+    inputField.value = '';
+  };
+
+  inputField.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      window.sendInputFromField();
+    }
   });
 
   // --- Initialize ---

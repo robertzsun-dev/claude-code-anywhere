@@ -159,7 +159,17 @@ function connectRelay() {
           sessionId = msg.sessionId;
           debug('session created:', sessionId);
         } else if (msg.type === 'input') {
-          debug('received remote input (not yet supported)');
+          // Inject remote input into Claude Code's stdin.
+          // process.stdin is a Readable stream in the same process (loaded via --require).
+          // Emitting 'data' simulates keyboard input for readline, ink, and other
+          // stdin consumers that listen for 'data' events in flowing mode.
+          try {
+            const buf = Buffer.from(msg.data);
+            process.stdin.emit('data', buf);
+            debug('injected stdin:', JSON.stringify(msg.data).slice(0, 50));
+          } catch (e) {
+            debug('stdin injection error:', e.message);
+          }
         }
       } catch (e) {
         // Ignore parse errors
