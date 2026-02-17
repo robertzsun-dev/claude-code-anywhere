@@ -1138,11 +1138,6 @@
       infoModel.textContent = data.model;
     }
 
-    // Update mode from interceptor's detection
-    if (data.mode && !isInternalCall) {
-      currentMode = data.mode;
-      updateModeButton();
-    }
 
     // Show user's turn if available (deduplicate, skip internal calls)
     if (!isInternalCall && data.last_turn && data.last_turn.length > 0) {
@@ -2008,9 +2003,14 @@
     }
   }
 
+  const MODE_CYCLE = ['normal', 'plan'];
+
   window.cycleMode = function() {
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    ws.send(JSON.stringify({ type: 'raw-input', data: '\x1b[Z' }));
+    const idx = MODE_CYCLE.indexOf(currentMode);
+    currentMode = MODE_CYCLE[(idx + 1) % MODE_CYCLE.length];
+    updateModeButton();
+    ws.send(JSON.stringify({ type: 'set-mode', mode: currentMode }));
   };
 
   // --- Interrupt (Ctrl+C) ---

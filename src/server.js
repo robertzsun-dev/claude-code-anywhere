@@ -315,6 +315,12 @@ function handleViewerMessage(ws, clientId, message) {
       session.interceptorWs.send(JSON.stringify(message));
       break;
 
+    case 'set-mode':
+      // Forward mode change to the interceptor for API request patching
+      console.log(`[Mode] Setting mode to: ${message.mode}`);
+      session.interceptorWs.send(JSON.stringify(message));
+      break;
+
     default:
       console.warn(`[Viewer] Unknown message type: ${message.type}`);
   }

@@ -321,6 +321,10 @@ function connectRelay() {
           relay({ type: 'ask-debug', step: 'ws-received', toolUseId: msg.toolUseId,
                   questionCount: msg.questions?.length || 0 });
           handleAskAnswer(msg);
+        } else if (msg.type === 'set-mode') {
+          viewerMode = msg.mode || 'normal';
+          debug('viewer mode set to:', viewerMode);
+          relay({ type: 'mode-change', mode: viewerMode, ts: Date.now() });
         }
       } catch (e) {
         // Ignore parse errors
@@ -462,13 +466,6 @@ function truncate(str, max) {
   return str.length > max ? str.slice(0, max) + '...[truncated]' : str;
 }
 
-function detectMode(body) {
-  const toolNames = (body.tools || []).map(t => t.name).filter(Boolean);
-  if (toolNames.includes('ExitPlanMode')) return 'plan';
-  if (toolNames.includes('EnterPlanMode')) return 'normal';
-  return null;
-}
-
 function extractRequestInfo(body) {
   const info = {
     model: body.model,
@@ -477,7 +474,6 @@ function extractRequestInfo(body) {
     messages_count: body.messages?.length || 0,
     has_system: !!body.system,
     tools: (body.tools || []).map(t => t.name).filter(Boolean),
-    mode: detectMode(body),
   };
 
   // Extract the most recent user turn for display
@@ -728,6 +724,13 @@ if (typeof originalFetch === 'function') {
       }
     }
 
+    // --- Apply viewer mode (plan/normal) to the request ---
+    if (viewerMode !== 'normal' && parsedBody) {
+      applyModeToRequest(parsedBody);
+      init = { ...init, body: JSON.stringify(parsedBody) };
+      debug('applied viewer mode:', viewerMode);
+    }
+
     // Assign a correlation ID so viewers can match requests with their SSE events
     const reqId = `req_${++requestCounter}_${Date.now()}`;
     debug('intercepting:', url, 'reqId:', reqId);
@@ -975,43 +978,27 @@ https.request = function interceptedHttpsRequest(urlOrOptions, optionsOrCb, mayb
 
 debug('https.request interceptor installed');
 
-// --- Mode Detection from Terminal Output ---
-// Claude Code's Ink TUI renders a status bar containing the current mode.
-// We monitor stdout.write to detect mode changes immediately (without waiting
-// for the next API call). The status bar always contains "Ctx:" which we use
-// as a quick gate to avoid processing unrelated output.
-let lastRelayedMode = null;
+// --- Client-Side Mode Patching ---
+// The viewer owns the mode state (normal/plan) and sends set-mode messages.
+// On each API request, we patch the system prompt to enforce the selected mode.
+let viewerMode = 'normal';
 
-const origStdoutWrite = process.stdout.write;
-process.stdout.write = function(chunk, encoding, cb) {
-  // Always call original first — never break Claude Code's output
-  const result = origStdoutWrite.apply(this, arguments);
-  try {
-    const raw = typeof chunk === 'string' ? chunk : chunk.toString();
-    // Quick gate: only process chunks that contain the status bar
-    if (raw.includes('Ctx:')) {
-      // Strip ANSI escape codes
-      const clean = raw.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '')
-                       .replace(/\x1b\][^\x07]*\x07/g, '');
-      // The status bar line contains "Model:" and "Ctx:". Check for mode indicators.
-      // Plan mode adds a plan indicator; auto-accept adds "auto" or "yolo".
-      let mode = 'normal';
-      if (/\bplan\b/i.test(clean)) mode = 'plan';
-      else if (/\bauto.accept\b|\byolo\b/i.test(clean)) mode = 'auto-accept';
-
-      if (mode !== lastRelayedMode) {
-        lastRelayedMode = mode;
-        relay({ type: 'mode-change', mode, ts: Date.now() });
-        debug('mode detected from stdout:', mode);
-      }
-    }
-  } catch (e) {
-    // Never break stdout
-  }
-  return result;
+const MODE_PROMPTS = {
+  plan: `\n\n[VIEWER MODE: PLAN]\nYou are in plan mode. In plan mode:\n- Explore the codebase using read-only tools (Read, Glob, Grep, Task with explore agents)\n- Design an implementation approach and present it to the user\n- Do NOT edit files, write files, or execute commands that modify the codebase\n- When your plan is ready, present it clearly and wait for user approval before making changes`,
 };
 
-debug('stdout mode monitor installed');
+function applyModeToRequest(parsedBody) {
+  if (viewerMode === 'normal' || !MODE_PROMPTS[viewerMode]) return;
+  const modePrompt = MODE_PROMPTS[viewerMode];
+  // Append mode instructions to the system prompt
+  if (typeof parsedBody.system === 'string') {
+    parsedBody.system += modePrompt;
+  } else if (Array.isArray(parsedBody.system)) {
+    parsedBody.system.push({ type: 'text', text: modePrompt });
+  } else {
+    parsedBody.system = modePrompt.trim();
+  }
+}
 
 // --- Send initial metadata ---
 relay({
