@@ -1015,6 +1015,12 @@
         // Debug trace from interceptor - log to console only (not UI)
         console.log('[ask-debug]', msg.step, msg);
         break;
+      case 'mode-change':
+        if (msg.mode) {
+          currentMode = msg.mode;
+          updateModeButton();
+        }
+        break;
       case 'metadata':
         handleMetadata(msg);
         break;
@@ -2005,11 +2011,6 @@
   window.cycleMode = function() {
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
     ws.send(JSON.stringify({ type: 'raw-input', data: '\x1b[Z' }));
-    // Show brief "switching" state — next API request will set the real mode
-    if (btnMode) {
-      btnMode.textContent = '...';
-      btnMode.classList.remove('qa-plan', 'qa-accept', 'qa-normal');
-    }
   };
 
   // --- Interrupt (Ctrl+C) ---

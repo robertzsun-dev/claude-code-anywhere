@@ -975,6 +975,44 @@ https.request = function interceptedHttpsRequest(urlOrOptions, optionsOrCb, mayb
 
 debug('https.request interceptor installed');
 
+// --- Mode Detection from Terminal Output ---
+// Claude Code's Ink TUI renders a status bar containing the current mode.
+// We monitor stdout.write to detect mode changes immediately (without waiting
+// for the next API call). The status bar always contains "Ctx:" which we use
+// as a quick gate to avoid processing unrelated output.
+let lastRelayedMode = null;
+
+const origStdoutWrite = process.stdout.write;
+process.stdout.write = function(chunk, encoding, cb) {
+  // Always call original first — never break Claude Code's output
+  const result = origStdoutWrite.apply(this, arguments);
+  try {
+    const raw = typeof chunk === 'string' ? chunk : chunk.toString();
+    // Quick gate: only process chunks that contain the status bar
+    if (raw.includes('Ctx:')) {
+      // Strip ANSI escape codes
+      const clean = raw.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '')
+                       .replace(/\x1b\][^\x07]*\x07/g, '');
+      // The status bar line contains "Model:" and "Ctx:". Check for mode indicators.
+      // Plan mode adds a plan indicator; auto-accept adds "auto" or "yolo".
+      let mode = 'normal';
+      if (/\bplan\b/i.test(clean)) mode = 'plan';
+      else if (/\bauto.accept\b|\byolo\b/i.test(clean)) mode = 'auto-accept';
+
+      if (mode !== lastRelayedMode) {
+        lastRelayedMode = mode;
+        relay({ type: 'mode-change', mode, ts: Date.now() });
+        debug('mode detected from stdout:', mode);
+      }
+    }
+  } catch (e) {
+    // Never break stdout
+  }
+  return result;
+};
+
+debug('stdout mode monitor installed');
+
 // --- Send initial metadata ---
 relay({
   type: 'metadata',
