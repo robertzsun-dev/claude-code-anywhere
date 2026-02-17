@@ -2007,9 +2007,15 @@
     }
   }
 
+  const MODE_CYCLE = ['normal', 'plan', 'auto-accept'];
+
   window.cycleMode = function() {
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
     ws.send(JSON.stringify({ type: 'raw-input', data: '\x1b[Z' }));
+    // Optimistically update — next API request will correct if out of sync
+    const idx = MODE_CYCLE.indexOf(currentMode);
+    currentMode = MODE_CYCLE[(idx + 1) % MODE_CYCLE.length];
+    updateModeButton();
   };
 
   // --- Interrupt (Ctrl+C) ---
