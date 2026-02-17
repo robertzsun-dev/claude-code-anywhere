@@ -3,7 +3,8 @@
 /**
  * Claude Code API Interceptor
  *
- * Loaded via: NODE_OPTIONS="--require /path/to/intercept.cjs"
+ * Loaded via: BUN_OPTIONS="--preload /path/to/intercept.cjs" (native binary / Bun)
+ *         or: NODE_OPTIONS="--require /path/to/intercept.cjs" (npm install / Node.js)
  *
  * Patches globalThis.fetch to intercept Anthropic API calls,
  * capturing structured conversation data (SSE events, request metadata)
@@ -22,10 +23,10 @@ if (process.env.CLAUDE_INTERCEPT === '0') return;
 const serverUrl = process.env.CLAUDE_INTERCEPT_SERVER || process.env.CLAUDE_REMOTE_SERVER;
 if (!serverUrl) return;
 
-// Guard against NODE_OPTIONS propagation to child processes.
-// NODE_OPTIONS="--require intercept.cjs" propagates to every child `node` process
-// that Claude Code spawns (bash tool, etc.). We only want to intercept the main
-// Claude Code process, not its children. Use a marker env var to detect re-entry.
+// Guard against env var propagation to child processes.
+// Both NODE_OPTIONS and BUN_OPTIONS propagate to child processes that Claude Code
+// spawns (bash tool, etc.). We only want to intercept the main Claude Code process,
+// not its children. Use a marker env var to detect re-entry.
 if (process.env.__CLAUDE_INTERCEPT_ACTIVE === '1') return;
 process.env.__CLAUDE_INTERCEPT_ACTIVE = '1';
 
@@ -43,6 +44,131 @@ function debug(...args) {
   if (DEBUG) process.stderr.write('[intercept] ' + args.join(' ') + '\n');
 }
 
+// --- Stdin Injection ---
+// Injects simple input (Enter, Escape, text) into Claude Code's stdin.
+// Arrow keys / multi-byte ANSI sequences do NOT work reliably in Bun, so
+// AskUserQuestion selections are handled at the API level instead (see below).
+
+function deliverBytes(buf) {
+  // Strategy 1: Call stdin 'data' listeners directly (works in Bun for single-byte).
+  if (typeof process.stdin.listeners === 'function') {
+    const listeners = process.stdin.listeners('data');
+    if (listeners.length > 0) {
+      for (const listener of listeners) {
+        try { listener(buf); } catch (e) { debug('listener call error:', e.message); }
+      }
+      return;
+    }
+  }
+  // Strategy 2: Push into readable stream buffer.
+  if (typeof process.stdin.push === 'function') {
+    try { process.stdin.push(buf); return; } catch (e) { debug('push failed:', e.message); }
+  }
+  // Strategy 3: EventEmitter emit.
+  try { process.stdin.emit('data', buf); } catch (e) { debug('emit failed:', e.message); }
+}
+
+function injectStdin(data) {
+  debug('injecting stdin:', JSON.stringify(data).slice(0, 80));
+  // For simple input (text, Enter, Escape), deliver each segment separately
+  const segments = [];
+  let textBuf = '';
+  for (let i = 0; i < data.length; i++) {
+    const code = data.charCodeAt(i);
+    if (code < 0x20 || code === 0x7f) {
+      if (textBuf) { segments.push(textBuf); textBuf = ''; }
+      segments.push(code === 0x0a ? '\r' : data[i]);
+    } else {
+      textBuf += data[i];
+    }
+  }
+  if (textBuf) segments.push(textBuf);
+
+  // Deliver text immediately, control chars after 50ms if text preceded them
+  let sawText = false;
+  const immediate = [], delayed = [];
+  for (const seg of segments) {
+    const isCtrl = seg.length === 1 && seg.charCodeAt(0) < 0x20;
+    if (!isCtrl) { sawText = true; immediate.push(seg); }
+    else { (sawText ? delayed : immediate).push(seg); }
+  }
+  for (const d of immediate) deliverBytes(Buffer.from(d));
+  if (delayed.length > 0) {
+    const fn = () => { for (const d of delayed) deliverBytes(Buffer.from(d)); };
+    const t = setTimeout(fn, 50);
+    if (t && typeof t.unref === 'function') t.unref();
+  }
+}
+
+// --- AskUserQuestion: API-level answer injection ---
+// Arrow keys don't work in Bun's stdin, so we handle AskUserQuestion at the
+// API level: send Escape to cancel the Ink selector (generating a "declined"
+// tool_result), then rewrite that tool_result in the outgoing API request
+// to contain the actual answer the user selected in the web viewer.
+let pendingAskAnswer = null;  // { toolUseId, answerText }
+
+function handleAskAnswer(msg) {
+  // msg: { toolUseId, questions: [{question, selectedLabel}, ...] }
+  if (!msg.toolUseId || !msg.questions) {
+    relay({ type: 'ask-debug', step: 'invalid-msg', detail: 'missing toolUseId or questions' });
+    return;
+  }
+
+  // Build the answer text in the same format Claude Code uses
+  let text = '';
+  for (const q of msg.questions) {
+    text += `- ${q.question}\n  → ${q.selectedLabel}\n`;
+  }
+
+  pendingAskAnswer = {
+    toolUseId: msg.toolUseId,
+    answerText: text.trim(),
+    ts: Date.now(),
+  };
+
+  debug('stored pending ask answer for', msg.toolUseId);
+  relay({ type: 'ask-debug', step: 'stored', toolUseId: msg.toolUseId,
+          answerPreview: text.trim().slice(0, 120) });
+
+  // Strategy to dismiss the AskUserQuestion UI:
+  //
+  // 1. Single question, single-select: Space + Enter
+  //    Enter selects the highlighted option and auto-continues with a new API call.
+  //
+  // 2. Multi-select or multi-question: Escape + type "continue"
+  //    Escape cancels the form, then we type "continue" to trigger a new API call.
+  //    The fetch interceptor rewrites the tool_result with the real answer and strips
+  //    the leftover "continue" text from the message.
+  const questionCount = msg.questions.length || 1;
+  const hasMultiSelect = !!msg.hasMultiSelect;
+  const useEscapeContinue = questionCount > 1 || hasMultiSelect;
+  relay({ type: 'ask-debug', step: 'dismissing-ui', count: questionCount,
+          hasMultiSelect, strategy: useEscapeContinue ? 'escape+continue' : 'enter' });
+
+  if (!useEscapeContinue) {
+    // Single question single-select: Space + Enter
+    deliverBytes(Buffer.from(' '));
+    const t = setTimeout(() => {
+      deliverBytes(Buffer.from('\r'));
+      relay({ type: 'ask-debug', step: 'enter-sent' });
+    }, 100);
+    if (t && typeof t.unref === 'function') t.unref();
+  } else {
+    // Multi-select or multi-question: Escape + type "continue" to trigger API call
+    deliverBytes(Buffer.from('\x1b'));
+    relay({ type: 'ask-debug', step: 'escape-sent' });
+    const t = setTimeout(() => {
+      const continueStr = 'continue\r';
+      for (let i = 0; i < continueStr.length; i++) {
+        const t2 = setTimeout(() => deliverBytes(Buffer.from(continueStr[i])), i * 30);
+        if (t2 && typeof t2.unref === 'function') t2.unref();
+      }
+      relay({ type: 'ask-debug', step: 'continue-typed' });
+    }, 1500);
+    if (t && typeof t.unref === 'function') t.unref();
+  }
+}
+
 // --- WebSocket Relay ---
 // Connects to the session server and relays structured API events
 let ws = null;
@@ -54,7 +180,25 @@ let heartbeatTimer = null;
 let requestCounter = 0; // monotonic counter for correlating requests with responses
 
 function loadWebSocket() {
-  // Try multiple resolution strategies for the ws module
+  const isBun = typeof Bun !== 'undefined';
+
+  if (isBun) {
+    // In Bun, the real ws npm package (from node_modules) uses Node.js internals
+    // (net.Socket, tls.TLSSocket) that don't work correctly in Bun — connections
+    // establish but immediately tear down. Use Bun's built-in ws polyfill instead,
+    // which wraps Bun's native WebSocket and works correctly.
+    try {
+      return require('ws'); // Returns Bun's built-in polyfill, NOT node_modules/ws
+    } catch (e) {
+      // Continue
+    }
+    if (typeof globalThis.WebSocket === 'function') {
+      return globalThis.WebSocket;
+    }
+    return null;
+  }
+
+  // Node.js: try the real ws npm package first (supports rejectUnauthorized, etc.)
   const strategies = [
     () => require(path.join(__dirname, '..', '..', 'node_modules', 'ws')),
     () => require('ws'),
@@ -114,15 +258,25 @@ function connectRelay() {
       url.searchParams.set('session', sessionId);
     }
 
-    // ws npm package accepts options as 2nd or 3rd arg;
-    // native WebSocket only accepts protocols as 2nd arg.
-    // Detect which API we have and construct accordingly.
+    const isBun = typeof Bun !== 'undefined';
     const isNative = !WebSocket.prototype.on;
     const wsUrl = url.toString();
 
-    if (isNative) {
+    if (isBun) {
+      // Bun's ws polyfill (BunWebSocket) wraps Bun's native WebSocket.
+      // It has .on() (extends EventEmitter) but its constructor follows
+      // the native WebSocket API: new WebSocket(url, protocols).
+      // It does NOT support Node.js ws options like { rejectUnauthorized }.
+      // Use NODE_TLS_REJECT_UNAUTHORIZED=0 for self-signed certs instead.
+      if (url.protocol === 'wss:') {
+        process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+      }
+      ws = new WebSocket(wsUrl);
+    } else if (isNative) {
+      // Native WebSocket (Node.js v22+ / browser API)
       ws = new WebSocket(wsUrl);
     } else {
+      // Real ws npm package (Node.js) — supports options as 2nd arg
       const wsOptions = url.protocol === 'wss:'
         ? { rejectUnauthorized: false }
         : undefined;
@@ -159,17 +313,14 @@ function connectRelay() {
           sessionId = msg.sessionId;
           debug('session created:', sessionId);
         } else if (msg.type === 'input') {
-          // Inject remote input into Claude Code's stdin.
-          // process.stdin is a Readable stream in the same process (loaded via --require).
-          // Emitting 'data' simulates keyboard input for readline, ink, and other
-          // stdin consumers that listen for 'data' events in flowing mode.
-          try {
-            const buf = Buffer.from(msg.data);
-            process.stdin.emit('data', buf);
-            debug('injected stdin:', JSON.stringify(msg.data).slice(0, 50));
-          } catch (e) {
-            debug('stdin injection error:', e.message);
-          }
+          injectStdin(msg.data);
+        } else if (msg.type === 'raw-input') {
+          // Deliver as a single buffer (preserves multi-byte ANSI sequences)
+          deliverBytes(Buffer.from(msg.data));
+        } else if (msg.type === 'ask-answer') {
+          relay({ type: 'ask-debug', step: 'ws-received', toolUseId: msg.toolUseId,
+                  questionCount: msg.questions?.length || 0 });
+          handleAskAnswer(msg);
         }
       } catch (e) {
         // Ignore parse errors
@@ -422,6 +573,153 @@ if (typeof originalFetch === 'function') {
       return originalFetch.apply(this, arguments);
     }
 
+    // Debug: log API calls only when we have a pending answer (when it matters for rewrite)
+    if (pendingAskAnswer) {
+      relay({ type: 'ask-debug', step: 'api-call',
+              hasPending: true,
+              pendingToolUseId: pendingAskAnswer.toolUseId,
+              pendingAge: Date.now() - pendingAskAnswer.ts });
+    }
+
+    // --- Rewrite "declined" AskUserQuestion answers if we have a pending response ---
+    // Debug: log every API call's tool_results when we have a pending answer
+    if (pendingAskAnswer) {
+      const age = Date.now() - pendingAskAnswer.ts;
+      // Collect all tool_results from the last user message for debugging
+      const debugToolResults = [];
+      if (parsedBody && parsedBody.messages) {
+        for (let i = parsedBody.messages.length - 1; i >= 0; i--) {
+          const m = parsedBody.messages[i];
+          if (m.role !== 'user') continue;
+          const blocks = Array.isArray(m.content) ? m.content : [];
+          for (const b of blocks) {
+            if (b.type === 'tool_result') {
+              const ct = typeof b.content === 'string' ? b.content
+                : Array.isArray(b.content) ? b.content.map(c => c.text || '').join(' ')
+                : String(b.content || '');
+              debugToolResults.push({
+                tool_use_id: b.tool_use_id,
+                is_error: !!b.is_error,
+                content_preview: ct.slice(0, 120),
+              });
+            }
+          }
+          break; // Only last user message
+        }
+      }
+      relay({ type: 'ask-debug', step: 'fetch-with-pending', age,
+              toolUseId: pendingAskAnswer.toolUseId,
+              toolResults: debugToolResults,
+              messageCount: parsedBody?.messages?.length || 0 });
+    }
+
+    if (pendingAskAnswer && parsedBody && parsedBody.messages) {
+      // Expire stale answers after 30s
+      if (Date.now() - pendingAskAnswer.ts > 30000) {
+        debug('pendingAskAnswer expired');
+        relay({ type: 'ask-debug', step: 'expired', toolUseId: pendingAskAnswer.toolUseId });
+        pendingAskAnswer = null;
+      } else {
+        const answer = pendingAskAnswer;
+        let rewritten = false;
+        let lastToolResult = null; // Track last tool_result as aggressive fallback
+
+        // Helper: extract text from tool_result content (handles string and array formats)
+        function getContentText(content) {
+          if (typeof content === 'string') return content;
+          if (Array.isArray(content)) return content.map(c => c.text || '').join(' ');
+          return String(content || '');
+        }
+
+        // Walk messages backwards to find the tool_result for this AskUserQuestion.
+        for (let i = parsedBody.messages.length - 1; i >= 0 && !rewritten; i--) {
+          const msg = parsedBody.messages[i];
+          if (msg.role !== 'user') continue;
+          const content = Array.isArray(msg.content) ? msg.content : [];
+          for (const block of content) {
+            if (block.type !== 'tool_result') continue;
+            if (!lastToolResult) lastToolResult = block; // Remember most recent
+
+            const contentText = getContentText(block.content);
+            const isTarget = block.tool_use_id === answer.toolUseId
+              || /declined|interrupted/i.test(contentText);
+            if (isTarget) {
+              debug('rewriting tool_result (matched) for', block.tool_use_id);
+              block.content = answer.answerText;
+              block.is_error = false;
+              rewritten = true;
+              relay({ type: 'ask-debug', step: 'rewrite-matched', tool_use_id: block.tool_use_id });
+              break;
+            }
+          }
+          break; // Only check the last user message
+        }
+
+        // Aggressive fallback: if no exact match, rewrite the last tool_result
+        // (it's almost certainly from the Escape we just sent)
+        if (!rewritten && lastToolResult) {
+          debug('rewriting tool_result (fallback) for', lastToolResult.tool_use_id,
+            'content was:', getContentText(lastToolResult.content).slice(0, 80));
+          lastToolResult.content = answer.answerText;
+          lastToolResult.is_error = false;
+          rewritten = true;
+          relay({ type: 'ask-debug', step: 'rewrite-fallback', tool_use_id: lastToolResult.tool_use_id,
+                  oldContent: getContentText(lastToolResult.content).slice(0, 80) });
+        }
+
+        if (rewritten) {
+          // Strip artifacts from the escape+continue dismissal strategy.
+          // After pressing Escape and typing "continue", the API request contains:
+          //   1. "continue" text (what we typed to trigger the new API call)
+          //   2. "[Request interrupted by user for tool use]" (Claude Code's cancellation notice)
+          // If left in, Claude sees the rewritten answer alongside these and thinks
+          // the user interrupted, responding with "looks like you interrupted" instead
+          // of using the injected answer.
+          for (let i = parsedBody.messages.length - 1; i >= 0; i--) {
+            const m = parsedBody.messages[i];
+            if (m.role !== 'user') break;
+            if (Array.isArray(m.content)) {
+              m.content = m.content.filter(block => {
+                if (block.type === 'text') {
+                  const text = block.text || '';
+                  if (/^\s*continue\s*$/i.test(text)) {
+                    debug('stripped "continue" text from user message');
+                    return false;
+                  }
+                  if (/interrupted|declined/i.test(text)) {
+                    debug('stripped interruption text from user message:', text.slice(0, 80));
+                    return false;
+                  }
+                }
+                return true;
+              });
+              // If the message is now empty, remove it entirely
+              if (m.content.length === 0) {
+                parsedBody.messages.splice(i, 1);
+              }
+            }
+            // Also handle string content
+            if (typeof m.content === 'string') {
+              if (/^\s*continue\s*$/i.test(m.content) || /interrupted|declined/i.test(m.content)) {
+                parsedBody.messages.splice(i, 1);
+                debug('stripped text message:', m.content.slice(0, 80));
+              }
+            }
+          }
+
+          pendingAskAnswer = null;
+          init = { ...init, body: JSON.stringify(parsedBody) };
+          // Relay debug info so the viewer can confirm rewrite happened
+          relay({ type: 'ask-rewrite', ts: Date.now(), toolUseId: answer.toolUseId,
+                  answerPreview: answer.answerText.slice(0, 100) });
+        } else {
+          relay({ type: 'ask-debug', step: 'no-rewrite', reason: 'no tool_results found',
+                  toolUseId: answer.toolUseId });
+        }
+        // If not rewritten (no tool_results at all), keep for next API call
+      }
+    }
+
     // Assign a correlation ID so viewers can match requests with their SSE events
     const reqId = `req_${++requestCounter}_${Date.now()}`;
     debug('intercepting:', url, 'reqId:', reqId);
@@ -441,7 +739,7 @@ if (typeof originalFetch === 'function') {
     // --- Make the real request ---
     let response;
     try {
-      response = await originalFetch.apply(this, arguments);
+      response = await originalFetch.call(this, input, init);
     } catch (err) {
       // If the actual API call fails, relay the error and re-throw
       relay({

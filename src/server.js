@@ -192,7 +192,9 @@ function handleInterceptorMessage(ws, clientId, message) {
     case 'api_request':
     case 'sse_event':
     case 'api_response':
-    case 'api_error': {
+    case 'api_error':
+    case 'ask-rewrite':
+    case 'ask-debug': {
       // Store the event
       addToEvents(session, message);
       // Broadcast structured event to all viewers (web intercept viewer)
@@ -292,6 +294,25 @@ function handleViewerMessage(ws, clientId, message) {
         type: 'input-echo',
         data: message.data
       });
+      break;
+
+    case 'raw-input':
+      // Forward raw bytes to interceptor (delivered as single buffer, no segmentation).
+      // Used for multi-byte ANSI sequences like Shift+Tab that need to arrive intact.
+      session.interceptorWs.send(JSON.stringify({
+        type: 'raw-input',
+        data: message.data
+      }));
+      broadcastToSession(session.id, {
+        type: 'input-echo',
+        data: message.data
+      });
+      break;
+
+    case 'ask-answer':
+      // Forward AskUserQuestion answer to the interceptor for API-level injection
+      console.log(`[AskAnswer] Forwarding to interceptor: toolUseId=${message.toolUseId}, questions=${message.questions?.length}`);
+      session.interceptorWs.send(JSON.stringify(message));
       break;
 
     default:
@@ -721,14 +742,15 @@ async function handleStartSession(req, res) {
       }
 
       // Spawn Claude Code inside a tmux session with the intercept module loaded.
-      // The interceptor runs in-process via NODE_OPTIONS --require, capturing
-      // structured API events and enabling remote stdin injection.
+      // The interceptor runs in-process via --preload (Bun) or --require (Node.js),
+      // capturing structured API events and enabling remote stdin injection.
       const interceptPath = new URL('./intercept/intercept.cjs', import.meta.url).pathname;
 
-      // Get full paths to node and claude binaries
-      const nodePath = process.execPath;
-      const nodeBinDir = dirname(nodePath);
-      const claudeCmd = join(nodeBinDir, 'claude');
+      // Find the real claude binary. Strategy:
+      // 1. If the shim is installed, use it (it handles Bun/Node detection itself)
+      // 2. Otherwise find claude in PATH and inject manually
+      const shimPath = join(os.homedir(), '.claude-shim', 'bin', 'claude');
+      const useShim = existsSync(shimPath);
 
       const tmuxArgs = [
         'new-session',
@@ -742,10 +764,19 @@ async function handleStartSession(req, res) {
         tmuxArgs.push('-x', cols.toString(), '-y', rows.toString());
       }
 
-      // Run claude directly with the intercept module injected via NODE_OPTIONS
       const wsProtocol = USE_HTTPS ? 'wss' : 'ws';
       const tlsReject = USE_HTTPS ? 'NODE_TLS_REJECT_UNAUTHORIZED=0 ' : '';
-      const shellCommand = `export PATH="${nodeBinDir}:$PATH"; ${tlsReject}CLAUDE_INTERCEPT_SERVER=${wsProtocol}://${HOST}:${PORT} NODE_OPTIONS="--require ${interceptPath}" exec ${claudeCmd}`;
+      const serverUrl = `${wsProtocol}://${HOST}:${PORT}`;
+
+      let shellCommand;
+      if (useShim) {
+        // Shim handles everything: finds real claude, detects Bun vs Node, injects interceptor
+        shellCommand = `${tlsReject}CLAUDE_INTERCEPT_SERVER=${serverUrl} exec ${shimPath}`;
+      } else {
+        // No shim — find claude and inject interceptor manually.
+        // Use both BUN_OPTIONS and NODE_OPTIONS so it works regardless of runtime.
+        shellCommand = `${tlsReject}CLAUDE_INTERCEPT_SERVER=${serverUrl} BUN_OPTIONS="--preload ${interceptPath}" NODE_OPTIONS="--require ${interceptPath}" exec claude`;
+      }
 
       tmuxArgs.push('/bin/bash', '-l', '-c', shellCommand);
 
@@ -840,60 +871,35 @@ async function handleHttpRequest(req, res) {
     if (handled) return;
   }
 
-  // Serve web client
-  if (req.url === '/' || req.url === '/index.html') {
+  // Serve web client — intercept (structured) viewer is the default
+  const urlPath = req.url.split('?')[0];
+  if (urlPath === '/' || urlPath === '/index.html' || urlPath === '/intercept' || urlPath === '/intercept.html') {
+    const filePath = join(__dirname, '..', 'public', 'intercept.html');
     import('fs').then(fs => {
-      import('path').then(path => {
-        import('url').then(url => {
-          const __filename = url.fileURLToPath(import.meta.url);
-          const __dirname = path.dirname(__filename);
-          const filePath = path.join(__dirname, '..', 'public', 'index.html');
-
-          fs.readFile(filePath, 'utf8', (err, data) => {
-            if (err) {
-              res.writeHead(404, { 'Content-Type': 'text/plain' });
-              res.end('Web client not found');
-            } else {
-              res.writeHead(200, { 'Content-Type': 'text/html' });
-              res.end(data);
-            }
-          });
-        });
+      fs.readFile(filePath, 'utf8', (err, data) => {
+        if (err) {
+          res.writeHead(404, { 'Content-Type': 'text/plain' });
+          res.end('Web client not found');
+        } else {
+          res.writeHead(200, { 'Content-Type': 'text/html' });
+          res.end(data);
+        }
       });
     });
-  } else if (req.url === '/pair' || req.url === '/pair.html') {
-    // Serve pairing page for mobile app setup
+  } else if (urlPath === '/pair' || urlPath === '/pair.html') {
+    const filePath = join(__dirname, '..', 'public', 'pair.html');
     import('fs').then(fs => {
-      import('path').then(path => {
-        const filePath = path.join(__dirname, '..', 'public', 'pair.html');
-        fs.readFile(filePath, 'utf8', (err, data) => {
-          if (err) {
-            res.writeHead(404, { 'Content-Type': 'text/plain' });
-            res.end('Pairing page not found');
-          } else {
-            res.writeHead(200, { 'Content-Type': 'text/html' });
-            res.end(data);
-          }
-        });
+      fs.readFile(filePath, 'utf8', (err, data) => {
+        if (err) {
+          res.writeHead(404, { 'Content-Type': 'text/plain' });
+          res.end('Pairing page not found');
+        } else {
+          res.writeHead(200, { 'Content-Type': 'text/html' });
+          res.end(data);
+        }
       });
     });
-  } else if (req.url === '/intercept' || req.url === '/intercept.html') {
-    // Serve structured intercept viewer
-    import('fs').then(fs => {
-      import('path').then(pathMod => {
-        const filePath = pathMod.join(__dirname, '..', 'public', 'intercept.html');
-        fs.readFile(filePath, 'utf8', (err, data) => {
-          if (err) {
-            res.writeHead(404, { 'Content-Type': 'text/plain' });
-            res.end('Intercept viewer not found');
-          } else {
-            res.writeHead(200, { 'Content-Type': 'text/html' });
-            res.end(data);
-          }
-        });
-      });
-    });
-  } else if (req.url === '/health') {
+  } else if (urlPath === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
       status: 'ok',

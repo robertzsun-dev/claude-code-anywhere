@@ -15,7 +15,7 @@ Unlike the old PTY wrapper approach, the interceptor:
 - Captures structured API data (requests, SSE events, responses)
 - Supports remote input via stdin injection
 - Leaves Claude Code's terminal UI completely untouched
-- Survives Claude Code UI upgrades
+- Survives Claude Code upgrades (real binary is never modified)
 
 ## Installation
 
@@ -25,18 +25,20 @@ cd ~/claude-code-anywhere/shim
 ```
 
 This will:
-1. Install the shim to `/usr/local/bin/claude`
-2. Create a config file at `~/.claude-remote.conf`
+1. Install the shim to `~/.claude-shim/bin/claude`
+2. Create a config file at `~/.claude-remote.conf` (adds shim dir to PATH)
 3. Optionally add shell integration to your rc file
 
 ### What Gets Changed
 
-The shim is installed to `/usr/local/bin/claude`, which takes priority in PATH over the real claude binary. No renaming of the original binary is needed.
+The shim is installed to its own dedicated directory (`~/.claude-shim/bin/`), which is prepended to PATH. The real claude binary is **never modified or renamed**, so Claude Code upgrades work seamlessly.
 
 ```
-/usr/local/bin/claude  → Shim script (checks for server, injects interceptor)
-/path/to/real/claude   → Original binary (found dynamically via PATH)
+~/.claude-shim/bin/claude   → Shim script (checks for server, injects interceptor)
+~/.local/bin/claude         → Original binary (untouched, found dynamically via PATH)
 ```
+
+At runtime, the shim filters its own directory from PATH and calls `which claude` to dynamically find the real binary. This means if Claude Code updates to a new version, the shim automatically picks up the new binary.
 
 ## Usage
 
@@ -68,6 +70,9 @@ claude chat
 Edit `~/.claude-remote.conf`:
 
 ```bash
+# PATH for shim (must be first)
+export PATH="~/.claude-shim/bin:$PATH"
+
 # Auto-connect to server (set to false to disable)
 export CLAUDE_AUTO_CONNECT=true
 
@@ -87,7 +92,6 @@ export CLAUDE_REMOTE_DIR=~/claude-code-anywhere
 | `CLAUDE_REMOTE_DIR` | `~/claude-code-anywhere` | Project directory |
 | `CLAUDE_INTERCEPT` | (unset) | Set to `0` to disable interception |
 | `CLAUDE_INTERCEPT_DEBUG` | (unset) | Set to `1` for debug output |
-| `CLAUDE_ORIGINAL` | (auto-detected) | Override path to original claude binary |
 
 ## Uninstallation
 
@@ -97,13 +101,13 @@ cd ~/claude-code-anywhere/shim
 ```
 
 This will:
-1. Remove the shim from `/usr/local/bin/claude`
-2. Optionally remove the systemd service
-3. Leave config file and original claude untouched
+1. Remove `~/.claude-shim/bin/claude`
+2. Clean up any legacy shims (from previous install approaches)
+3. Optionally remove the systemd service
+4. Leave the real claude binary untouched
 
 ## Files
 
-- `claude` - Template shim script
 - `install.sh` - Installation script
 - `uninstall.sh` - Uninstallation script
 - `README.md` - This file
@@ -112,15 +116,16 @@ This will:
 
 ### "claude: command not found"
 
-The original binary may not be in PATH after removing the shim:
+Make sure the shim directory is in PATH:
 ```bash
-which claude
-echo $PATH
+echo $PATH | tr ':' '\n' | head -5
+# ~/.claude-shim/bin should appear before ~/.local/bin
+source ~/.claude-remote.conf
 ```
 
 ### Server check too slow
 
-Adjust the timeout in the installed shim at `/usr/local/bin/claude`:
+Adjust the timeout in the shim at `~/.claude-shim/bin/claude`:
 ```bash
 timeout 0.5 bash -c ...
 # Change 0.5 to a lower value like 0.1

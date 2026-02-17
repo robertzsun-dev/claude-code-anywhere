@@ -384,6 +384,38 @@
       flex-shrink: 0;
     }
 
+    /* --- Context bar --- */
+    .context-bar {
+      background: var(--bg-secondary);
+      border-top: 1px solid var(--border);
+      padding: 4px 16px;
+      font-size: 11px;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+
+    .context-meter {
+      flex: 1;
+      height: 6px;
+      background: var(--bg-tertiary);
+      border-radius: 3px;
+      overflow: hidden;
+      max-width: 200px;
+    }
+
+    .context-meter-fill {
+      height: 100%;
+      border-radius: 3px;
+      transition: width 0.3s, background 0.3s;
+      background: var(--accent-blue);
+    }
+
+    .context-meter-fill.warn { background: var(--accent-orange); }
+    .context-meter-fill.critical { background: var(--accent); }
+
     /* --- Input bar --- */
     .input-bar {
       background: var(--bg-secondary);
@@ -395,8 +427,13 @@
       flex-shrink: 0;
     }
 
-    .input-bar input {
+    .input-wrapper {
       flex: 1;
+      position: relative;
+    }
+
+    .input-wrapper input {
+      width: 100%;
       background: var(--code-bg);
       border: 1px solid var(--border);
       border-radius: 6px;
@@ -406,8 +443,131 @@
       font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
       outline: none;
     }
-    .input-bar input:focus { border-color: var(--accent-blue); }
-    .input-bar input:disabled { opacity: 0.5; }
+    .input-wrapper input:focus { border-color: var(--accent-blue); }
+    .input-wrapper input:disabled { opacity: 0.5; }
+
+    .suggestion-overlay {
+      position: absolute;
+      left: 13px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 14px;
+      font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+      color: #555;
+      pointer-events: none;
+      white-space: nowrap;
+      overflow: hidden;
+      max-width: calc(100% - 26px);
+      display: none;
+    }
+
+    .suggestion-hint {
+      font-size: 11px;
+      color: #444;
+      margin-left: 4px;
+    }
+
+    /* --- Interactive options (AskUserQuestion) --- */
+    .ask-question { margin: 8px 0; }
+
+    .ask-question-text {
+      font-size: 13px;
+      color: var(--text);
+      margin-bottom: 8px;
+      font-weight: 500;
+    }
+
+    .ask-options {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .ask-option {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      cursor: pointer;
+      text-align: left;
+      color: var(--text);
+      font-size: 13px;
+      font-family: inherit;
+      transition: border-color 0.15s, background 0.15s;
+    }
+
+    .ask-option:hover:not(:disabled):not(.selected) {
+      border-color: var(--accent-blue);
+      background: rgba(74, 158, 255, 0.08);
+    }
+
+    .ask-option-num {
+      font-weight: 700;
+      color: var(--accent-blue);
+      min-width: 20px;
+      text-align: center;
+      flex-shrink: 0;
+    }
+
+    .ask-option-label { font-weight: 500; }
+
+    .ask-option-desc {
+      color: var(--text-muted);
+      font-size: 12px;
+      margin-left: auto;
+      flex-shrink: 0;
+    }
+
+    .ask-option.selected {
+      border-color: var(--accent-blue) !important;
+      background: rgba(74, 158, 255, 0.25) !important;
+      opacity: 1 !important;
+      box-shadow: 0 0 0 1px var(--accent-blue);
+    }
+    .ask-option.selected .ask-option-num::before {
+      content: '\2713 ';
+    }
+    .ask-option.dimmed {
+      opacity: 0.45;
+      pointer-events: none;
+    }
+
+    .ask-option-other {
+      border-style: dashed;
+      color: var(--text-muted);
+    }
+    .ask-option-other:hover { color: var(--text); }
+
+    .ask-question-header {
+      font-size: 11px;
+      color: var(--accent-blue);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+    }
+
+    .ask-multiselect-hint {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-weight: normal;
+    }
+
+    .ask-submit {
+      margin-top: 8px;
+      padding: 8px 20px;
+      background: var(--accent-blue);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .ask-submit:hover { opacity: 0.9; }
+    .ask-submit:disabled { opacity: 0.4; cursor: default; }
 
     .input-bar .send-btn {
       background: var(--accent-blue);
@@ -426,9 +586,36 @@
       display: flex;
       gap: 4px;
       flex-shrink: 0;
+      align-items: center;
     }
 
-    .quick-actions button {
+    .qa-btn {
+      padding: 6px 12px;
+      border-radius: 5px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      border: 1px solid;
+      font-family: inherit;
+      transition: opacity 0.15s;
+    }
+    .qa-btn:hover:not(:disabled) { opacity: 0.8; }
+    .qa-btn:disabled { opacity: 0.3; cursor: default; }
+
+    .qa-accept { background: rgba(76, 175, 80, 0.15); border-color: var(--accent-green); color: var(--accent-green); }
+    .qa-reject { background: rgba(233, 69, 96, 0.15); border-color: var(--accent); color: var(--accent); }
+    .qa-plan { background: rgba(187, 134, 252, 0.15); border-color: var(--accent-purple); color: var(--accent-purple); }
+    .qa-interrupt { background: rgba(255, 152, 0, 0.15); border-color: var(--accent-orange); color: var(--accent-orange); }
+
+    .qa-sep {
+      width: 1px;
+      height: 20px;
+      background: var(--border);
+      flex-shrink: 0;
+    }
+
+    .qa-small {
       background: var(--bg-tertiary);
       color: var(--text);
       border: 1px solid var(--border);
@@ -438,9 +625,126 @@
       font-family: monospace;
       cursor: pointer;
       white-space: nowrap;
+      min-width: 28px;
+      text-align: center;
     }
-    .quick-actions button:hover { background: var(--border); }
-    .quick-actions button:disabled { opacity: 0.4; cursor: default; }
+    .qa-small:hover:not(:disabled) { background: var(--border); }
+    .qa-small:disabled { opacity: 0.3; cursor: default; }
+
+    /* --- Modal (file browser) --- */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      z-index: 1000;
+      left: 0; top: 0;
+      width: 100%; height: 100%;
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(4px);
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-overlay.show { display: flex; }
+
+    .modal-box {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      width: 90%;
+      max-width: 560px;
+      max-height: 80vh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+    }
+
+    .modal-box-header {
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .modal-box-header h3 { font-size: 15px; font-weight: 600; }
+
+    .modal-box-close {
+      background: none; border: none;
+      color: var(--text-muted); font-size: 20px;
+      cursor: pointer; padding: 0; line-height: 1;
+    }
+    .modal-box-close:hover { color: var(--text); }
+
+    .modal-box-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px 16px;
+    }
+
+    .modal-box-footer {
+      padding: 12px 20px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    .current-path-display {
+      padding: 8px 12px;
+      background: var(--code-bg);
+      border-radius: 6px;
+      margin-bottom: 10px;
+      font-size: 12px;
+      color: var(--text-muted);
+      font-family: monospace;
+      word-break: break-all;
+    }
+
+    .file-list { display: flex; flex-direction: column; gap: 2px; }
+
+    .file-item {
+      padding: 8px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      transition: background 0.15s;
+      border: 1px solid transparent;
+    }
+    .file-item:hover { background: var(--bg-tertiary); border-color: var(--border); }
+    .file-item.directory { color: var(--accent-blue); }
+    .file-item.file { color: var(--text-muted); }
+    .file-icon { font-size: 14px; width: 18px; text-align: center; }
+
+    .btn-modal {
+      padding: 7px 16px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      border: none;
+      font-family: inherit;
+    }
+    .btn-modal-primary { background: var(--accent-blue); color: #fff; }
+    .btn-modal-primary:hover { opacity: 0.9; }
+    .btn-modal-secondary { background: transparent; border: 1px solid var(--border); color: var(--text); }
+    .btn-modal-secondary:hover { background: var(--bg-tertiary); }
+
+    .new-session-btn {
+      width: calc(100% - 16px);
+      margin: 8px;
+      padding: 10px;
+      background: var(--accent-blue);
+      border: none;
+      border-radius: 6px;
+      color: #fff;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s;
+      font-family: inherit;
+    }
+    .new-session-btn:hover { opacity: 0.9; }
 
     /* --- Scrollbar --- */
     ::-webkit-scrollbar { width: 6px; }
@@ -468,6 +772,7 @@
 <div class="layout">
   <div class="sidebar">
     <h2>Sessions</h2>
+    <button class="new-session-btn" onclick="openFileBrowser()">+ Start New Session</button>
     <div class="session-list" id="sessionList">
       <div style="padding: 16px; color: var(--text-muted); font-size: 13px;">Loading sessions...</div>
     </div>
@@ -479,6 +784,7 @@
       <span>Model: <span class="tag" id="infoModel">-</span></span>
       <span>Events: <span id="infoEvents">0</span></span>
       <span>Tokens: <span id="infoTokens">-</span></span>
+      <span>Context: <span id="infoContext">-</span></span>
     </div>
 
     <div class="conversation" id="conversation">
@@ -498,16 +804,27 @@
       <span>Tool calls: <strong id="statToolCalls">0</strong></span>
     </div>
 
+    <div class="context-bar" id="contextBar" style="display: none;">
+      <span>Context: <strong id="ctxPercent">0%</strong></span>
+      <div class="context-meter"><div class="context-meter-fill" id="ctxMeterFill" style="width: 0%"></div></div>
+      <span id="ctxTokens">0k / 200k</span>
+      <span style="margin-left: 8px;">Usable: <strong id="ctxUsable">0%</strong></span>
+    </div>
+
     <div class="input-bar" id="inputBar" style="display: none;">
       <div class="quick-actions">
-        <button onclick="sendInput('y\n')" id="btnY" disabled>y</button>
-        <button onclick="sendInput('n\n')" id="btnN" disabled>n</button>
-        <button onclick="sendInput('1')" id="btn1" disabled>1</button>
-        <button onclick="sendInput('2')" id="btn2" disabled>2</button>
-        <button onclick="sendInput('3')" id="btn3" disabled>3</button>
-        <button onclick="sendInput('\x1b')" id="btnEsc" disabled>Esc</button>
+        <button class="qa-btn qa-accept" onclick="sendInput('y')" id="btnAccept" disabled>Accept</button>
+        <button class="qa-btn qa-reject" onclick="sendInput('n')" id="btnReject" disabled>Reject</button>
+        <span class="qa-sep"></span>
+        <button class="qa-btn qa-plan" onclick="cycleMode()" id="btnMode" disabled>Mode</button>
+        <button class="qa-btn qa-interrupt" onclick="sendInterrupt()" id="btnInterrupt" disabled>Interrupt</button>
+        <span class="qa-sep"></span>
+        <button class="qa-small" onclick="sendInput('\x1b')" id="btnEsc" disabled>Esc</button>
       </div>
-      <input type="text" id="inputField" placeholder="Type input for Claude Code..." disabled />
+      <div class="input-wrapper">
+        <input type="text" id="inputField" placeholder="Type input for Claude Code..." disabled />
+        <span class="suggestion-overlay" id="suggestionOverlay"></span>
+      </div>
       <button class="send-btn" id="sendBtn" onclick="sendInputFromField()" disabled>Send</button>
     </div>
   </div>
@@ -527,6 +844,12 @@
   let currentModel = null;
   let currentMessageBlocks = [];  // content blocks being built for current assistant message
   let activeBlockIndex = -1;
+  let lastUserText = null; // Track last shown user message to deduplicate
+  let currentRequestInternal = false; // True when processing an internal API call (skip rendering)
+  let currentRequestSuggestion = false; // True when processing a suggestion API call
+  let suggestionText = ''; // Accumulated text during suggestion streaming
+  let currentSuggestion = ''; // Current autocomplete suggestion shown in input
+  let latestContextTokens = 0; // Input tokens from the most recent API call (= context usage)
   let stats = {
     inputTokens: 0,
     outputTokens: 0,
@@ -617,12 +940,15 @@
     currentModel = null;
     currentMessageBlocks = [];
     activeBlockIndex = -1;
+    lastUserText = null;
     stats = { inputTokens: 0, outputTokens: 0, apiCalls: 0, toolCalls: 0, events: 0 };
+    latestContextTokens = 0;
 
     // Clear conversation
     conversationEl.innerHTML = '';
     infoBar.style.display = 'flex';
     statsBar.style.display = 'flex';
+    document.getElementById('contextBar').style.display = 'flex';
     document.getElementById('inputBar').style.display = 'flex';
     infoSession.textContent = sessionId.slice(0, 8);
 
@@ -679,12 +1005,30 @@
       case 'api_error':
         handleApiError(msg);
         break;
+      case 'ask-rewrite':
+        appendSystemMessage(`Answer injected: ${msg.answerPreview || '(unknown)'}`);
+        break;
+      case 'ask-debug':
+        // Debug trace from interceptor - log to console only (not UI)
+        console.log('[ask-debug]', msg.step, msg);
+        break;
       case 'metadata':
         handleMetadata(msg);
         break;
       case 'input-echo':
-        // Input from another viewer - show it
-        if (msg.data) appendSystemMessage(`Remote input: ${msg.data.replace(/\n/g, '\\n')}`);
+        // Show user input and set lastUserText to prevent duplicate from api_request
+        if (msg.data) {
+          // Strip escape sequences (arrow keys, ESC, control chars) and whitespace
+          const cleanText = msg.data
+            .replace(/\x1b\[[A-Za-z0-9;]*[A-Za-z]/g, '')  // ANSI escape sequences
+            .replace(/\x1b/g, '')                           // bare ESC
+            .replace(/[\r\n]/g, '')
+            .trim();
+          if (cleanText) {
+            lastUserText = cleanText;
+            appendUserMessage(cleanText);
+          }
+        }
         break;
       case 'wrapper-disconnected':
         appendSystemMessage('Session disconnected');
@@ -722,49 +1066,130 @@
     }
   }
 
+  // Returns true if text looks like internal system content, not real user input
+  function isInternalContent(text) {
+    if (!text) return true;
+    const t = text.trim();
+    if (t.includes('<system-reminder>')) return true;
+    if (t.startsWith('<system')) return true;
+    if (t === 'foo') return true;
+    return false;
+  }
+
+  // Returns true if completed assistant text is internal metadata (not real response)
+  function isInternalAssistantResponse(text) {
+    if (!text) return true;
+    if (text === '#') return true;
+    if (text.startsWith('{') && text.includes('"isNewTopic"')) return true;
+    // Internal XML metadata responses (e.g. <is_displaying_contents>, <filepaths>)
+    if (text.startsWith('<') && /^<\w+>\s*\n/.test(text)) return true;
+    return false;
+  }
+
+  // Checks if an api_request's last_turn contains a suggestion mode prompt
+  function isSuggestionRequest(data) {
+    if (!data.last_turn) return false;
+    for (const turn of data.last_turn) {
+      if (turn.type === 'text' && turn.text && turn.text.includes('[SUGGESTION MODE:')) return true;
+      if (turn.blocks) {
+        for (const block of turn.blocks) {
+          if (block.type === 'text' && block.text && block.text.includes('[SUGGESTION MODE:')) return true;
+        }
+      }
+    }
+    return false;
+  }
+
   function handleApiRequest(msg) {
     const data = msg.data || {};
     stats.apiCalls++;
 
-    if (data.model) {
+    // Detect internal API calls that should not be rendered
+    const isInternalCall =
+      // Quota checks use haiku model
+      (data.model && data.model.includes('haiku')) ||
+      // MCP-only tool calls (probes, topic classification) - no built-in tools like Task/Bash
+      (data.tools && data.tools.length > 0 && data.tools.every(t => t.startsWith('mcp__')));
+
+    // Detect suggestion mode - capture response as autocomplete instead of rendering
+    const isSuggestion = !isInternalCall && isSuggestionRequest(data);
+    currentRequestSuggestion = isSuggestion;
+    if (isSuggestion) {
+      suggestionText = '';
+      currentRequestInternal = false;
+      updateStats();
+      return;
+    }
+
+    // Track whether the current request is internal so SSE/response handlers can skip
+    currentRequestInternal = isInternalCall;
+
+    if (data.model && !isInternalCall) {
       currentModel = data.model;
       infoModel.textContent = data.model;
     }
 
-    // Show user's turn if available
-    if (data.last_turn && data.last_turn.length > 0) {
+    // Show user's turn if available (deduplicate, skip internal calls)
+    if (!isInternalCall && data.last_turn && data.last_turn.length > 0) {
       for (const turn of data.last_turn) {
         if (turn.type === 'text' && turn.text) {
-          appendUserMessage(turn.text);
+          if (turn.text !== lastUserText && !isInternalContent(turn.text)) {
+            lastUserText = turn.text;
+            appendUserMessage(turn.text);
+          }
         } else if (turn.blocks) {
           for (const block of turn.blocks) {
             if (block.type === 'text' && block.text) {
-              appendUserMessage(block.text);
-            } else if (block.type === 'tool_result') {
-              appendToolResult(block.tool_use_id, block.content, block.is_error);
+              if (block.text !== lastUserText && !isInternalContent(block.text)) {
+                lastUserText = block.text;
+                appendUserMessage(block.text);
+              }
             }
           }
         }
       }
     }
 
-    // Show request info
-    const toolsStr = data.tools && data.tools.length > 0
-      ? `Tools: ${data.tools.join(', ')}`
-      : '';
-    const reqInfo = [
-      data.model && `Model: ${data.model}`,
-      `Messages: ${data.messages_count}`,
-      toolsStr,
-    ].filter(Boolean).join(' | ');
+    // Don't show request info lines for internal calls
+    if (!isInternalCall) {
+      const toolsStr = data.tools && data.tools.length > 0
+        ? `Tools: ${data.tools.join(', ')}`
+        : '';
+      const reqInfo = [
+        data.model && `Model: ${data.model}`,
+        `Messages: ${data.messages_count}`,
+        toolsStr,
+      ].filter(Boolean).join(' | ');
 
-    appendRequestInfo(reqInfo);
+      appendRequestInfo(reqInfo);
+    }
     updateStats();
   }
 
   function handleSSEEvent(msg) {
     stats.events++;
     infoEvents.textContent = stats.events;
+
+    // Skip rendering SSE events from internal API calls (quota checks, MCP probes)
+    if (currentRequestInternal) return;
+
+    // Capture suggestion responses as autocomplete text
+    if (currentRequestSuggestion) {
+      let sData;
+      try { sData = JSON.parse(msg.data); } catch (e) { return; }
+      if (msg.event === 'content_block_delta') {
+        const delta = sData.delta || {};
+        if (delta.type === 'text_delta' && delta.text) {
+          suggestionText += delta.text;
+        }
+      } else if (msg.event === 'message_stop') {
+        const clean = suggestionText.replace(/^\n+/, '').trim();
+        if (clean) setSuggestion(clean);
+        suggestionText = '';
+        currentRequestSuggestion = false;
+      }
+      return;
+    }
 
     const eventType = msg.event;
     let data;
@@ -803,6 +1228,13 @@
 
     if (message.usage) {
       stats.inputTokens += message.usage.input_tokens || 0;
+      // Track the latest input tokens for context % calculation
+      if (message.usage.input_tokens) {
+        latestContextTokens = message.usage.input_tokens
+          + (message.usage.cache_read_input_tokens || 0)
+          + (message.usage.cache_creation_input_tokens || 0);
+        updateContextDisplay();
+      }
     }
 
     // Create assistant message container
@@ -859,6 +1291,14 @@
 
   function handleContentBlockStop(data) {
     removeStreamingCursor();
+
+    // If this was an AskUserQuestion tool_use, render interactive options
+    const idx = data.index;
+    const block = currentMessageBlocks[idx];
+    if (block && block.type === 'tool_use' && block.name === 'AskUserQuestion') {
+      renderAskUserQuestion(block.input, block.id);
+    }
+
     activeBlockIndex = -1;
   }
 
@@ -875,13 +1315,77 @@
 
   function handleMessageStop(data) {
     removeStreamingCursor();
+
+    // Retroactively remove assistant messages that are internal metadata
+    // (e.g. "#" from initial setup, or any junk that slipped past request-level filters)
+    // But never remove messages that contain tool_use blocks (like AskUserQuestion)
+    const body = getCurrentAssistantBody();
+    if (body) {
+      const hasToolUse = body.querySelector('.tool-use') !== null;
+      if (!hasToolUse) {
+        const textSpans = body.querySelectorAll('.text-content');
+        let fullText = '';
+        for (const span of textSpans) {
+          fullText += (span.getAttribute('data-raw') || span.textContent || '');
+        }
+        if (isInternalAssistantResponse(fullText.trim())) {
+          const msgEl = body.closest('.message.assistant');
+          if (msgEl) {
+            const prev = msgEl.previousElementSibling;
+            if (prev && prev.classList.contains('request-info')) prev.remove();
+            msgEl.remove();
+          }
+        }
+      }
+    }
+
     currentMessageBlocks = [];
   }
 
   function handleApiResponse(msg) {
-    // Non-streaming response - render the complete message
     const data = msg.data || {};
+
+    // Skip rendering for internal API calls (stats only)
+    if (currentRequestInternal) {
+      if (data.usage) {
+        stats.inputTokens += data.usage.input_tokens || 0;
+        stats.outputTokens += data.usage.output_tokens || 0;
+      }
+      updateStats();
+      return;
+    }
+
+    // Handle non-streaming suggestion response
+    if (currentRequestSuggestion) {
+      if (data.content) {
+        const text = data.content
+          .filter(b => b.type === 'text' && b.text)
+          .map(b => b.text)
+          .join('');
+        const clean = text.replace(/^\n+/, '').trim();
+        if (clean) setSuggestion(clean);
+      }
+      currentRequestSuggestion = false;
+      return;
+    }
+
+    // Non-streaming response - render the complete message
     if (data.content) {
+      // Filter out internal metadata responses (e.g. topic classification)
+      const textContent = data.content
+        .filter(b => b.type === 'text' && b.text)
+        .map(b => b.text)
+        .join('');
+      if (isInternalAssistantResponse(textContent.trim())) {
+        if (data.usage) {
+          stats.inputTokens += data.usage.input_tokens || 0;
+          stats.outputTokens += data.usage.output_tokens || 0;
+        }
+        stats.apiCalls++;
+        updateStats();
+        return;
+      }
+
       const el = createAssistantMessageEl();
       conversationEl.appendChild(el);
 
@@ -900,6 +1404,12 @@
       if (data.usage) {
         stats.inputTokens += data.usage.input_tokens || 0;
         stats.outputTokens += data.usage.output_tokens || 0;
+        if (data.usage.input_tokens) {
+          latestContextTokens = data.usage.input_tokens
+            + (data.usage.cache_read_input_tokens || 0)
+            + (data.usage.cache_creation_input_tokens || 0);
+          updateContextDisplay();
+        }
       }
       stats.apiCalls++;
       updateStats();
@@ -907,6 +1417,8 @@
   }
 
   function handleApiError(msg) {
+    // "The operation was aborted" is normal when user interrupts — not a real error
+    if (msg.error && /aborted/i.test(msg.error)) return;
     appendSystemMessage(`API Error: ${msg.error}`);
   }
 
@@ -953,14 +1465,18 @@
   }
 
   function appendTextDelta(text) {
+    if (text == null) return;
     const body = getCurrentAssistantBody();
     const spans = body.querySelectorAll('.text-content');
     const lastSpan = spans[spans.length - 1];
 
     if (lastSpan) {
-      // Render basic markdown-like formatting
-      lastSpan.innerHTML = renderText(lastSpan.getAttribute('data-raw') + text);
-      lastSpan.setAttribute('data-raw', (lastSpan.getAttribute('data-raw') || '') + text);
+      const existing = lastSpan.getAttribute('data-raw') || '';
+      let raw = existing + text;
+      // Strip leading newlines from new text blocks
+      if (!existing) raw = raw.replace(/^\n+/, '');
+      lastSpan.innerHTML = renderText(raw);
+      lastSpan.setAttribute('data-raw', raw);
     }
 
     maybeScrollToBottom();
@@ -1042,6 +1558,217 @@
     conversationEl.appendChild(el);
     maybeScrollToBottom();
   }
+
+  // --- AskUserQuestion: Interactive Options ---
+  // Supports single-question single-select (immediate click),
+  // multi-question (collect all, submit together), and
+  // multi-select (toggle options, then submit).
+  //
+  // State for multi-question/multi-select flows:
+  let askState = null; // { questions: [...], selections: [[selectedIdx, ...], ...] }
+
+  let askUid = 0;  // unique ID per AskUserQuestion render to avoid DOM collisions
+
+  function renderAskUserQuestion(inputJson, toolUseId) {
+    let parsed;
+    try { parsed = JSON.parse(inputJson); } catch (e) { return; }
+    if (!parsed.questions || !parsed.questions.length) return;
+
+    const body = getCurrentAssistantBody();
+    if (!body) return;
+
+    const toolUses = body.querySelectorAll('.tool-use');
+    const lastToolUse = toolUses[toolUses.length - 1];
+    if (!lastToolUse) return;
+
+    const toolBody = lastToolUse.querySelector('.tool-use-body');
+    if (!toolBody) return;
+
+    // Unique prefix for this AskUserQuestion instance (avoids ID collisions)
+    const uid = ++askUid;
+
+    // Determine mode: single-question single-select is the simple/common path
+    const isSingleSimple = parsed.questions.length === 1 && !parsed.questions[0].multiSelect;
+
+    // Initialize state for multi-question/multi-select
+    askState = {
+      uid,
+      toolUseId: toolUseId || null,
+      questions: parsed.questions,
+      selections: parsed.questions.map(() => []),
+    };
+
+    let html = `<div class="ask-container" data-ask-uid="${uid}">`;
+    parsed.questions.forEach((q, qIdx) => {
+      html += `<div class="ask-question" data-q="${qIdx}">`;
+      if (q.header) {
+        html += `<div class="ask-question-header">${escapeHtml(q.header)}</div>`;
+      }
+      html += `<div class="ask-question-text">${escapeHtml(q.question)}`;
+      if (q.multiSelect) html += ' <span class="ask-multiselect-hint">(select multiple)</span>';
+      html += '</div>';
+
+      if (q.options) {
+        html += '<div class="ask-options">';
+        q.options.forEach((opt, i) => {
+          const onclick = isSingleSimple
+            ? `selectOptionImmediate(this, ${i})`
+            : `toggleAskOption(${uid}, ${qIdx}, ${i})`;
+          html += `<button class="ask-option" data-uid="${uid}" data-q="${qIdx}" data-opt="${i}" onclick="${onclick}">`;
+          html += `<span class="ask-option-num">${i + 1}</span>`;
+          html += `<span class="ask-option-label">${escapeHtml(opt.label)}</span>`;
+          if (opt.description) {
+            html += `<span class="ask-option-desc">${escapeHtml(opt.description)}</span>`;
+          }
+          html += '</button>';
+        });
+        // "Other" option
+        const otherOnclick = isSingleSimple
+          ? `selectOther(${q.options.length})`
+          : `selectOther(${q.options.length})`;
+        html += `<button class="ask-option ask-option-other" onclick="${otherOnclick}">`;
+        html += '<span class="ask-option-num">&#9998;</span>';
+        html += '<span class="ask-option-label">Type custom response...</span>';
+        html += '</button>';
+        html += '</div>';
+      }
+      html += '</div>';
+    });
+
+    // Submit button for multi-question or multi-select
+    if (!isSingleSimple) {
+      html += `<button class="ask-submit" data-ask-uid="${uid}" onclick="submitAskSelections()" disabled>`;
+      html += 'Submit Selections</button>';
+    }
+    html += '</div>';
+
+    toolBody.innerHTML = html;
+    toolBody.classList.remove('collapsed');
+    toolBody.style.maxHeight = 'none';
+    toolBody.style.background = 'transparent';
+    toolBody.style.padding = '4px 8px';
+    maybeScrollToBottom();
+  }
+
+  // --- Simple mode: single-question single-select, click sends immediately ---
+  window.selectOptionImmediate = function(btnEl, optIdx) {
+    if (!ws || ws.readyState !== WebSocket.OPEN || !askState) return;
+    // Scope to THIS question's container only (avoid affecting other AskUserQuestion renders)
+    const container = btnEl.closest('.ask-container');
+    if (container) {
+      container.querySelectorAll('.ask-option').forEach(btn => btn.classList.add('dimmed'));
+    }
+    btnEl.classList.remove('dimmed');
+    btnEl.classList.add('selected');
+
+    // Send ask-answer via API-level injection (bypasses broken arrow keys in Bun)
+    const q = askState.questions[0];
+    const selectedLabel = q.options[optIdx] ? q.options[optIdx].label : `Option ${optIdx + 1}`;
+    ws.send(JSON.stringify({
+      type: 'ask-answer',
+      toolUseId: askState.toolUseId,
+      questions: [{ question: q.question, selectedLabel }],
+    }));
+    askState = null;
+  };
+
+  // --- "Other" option: prompt for custom text and send via ask-answer ---
+  window.selectOther = function(optionCount) {
+    if (!ws || ws.readyState !== WebSocket.OPEN || !askState) return;
+
+    const customText = prompt('Type your custom response:');
+    if (!customText) return; // User cancelled
+
+    // Dim all options, highlight the "Other" button
+    const container = document.querySelector(`.ask-container[data-ask-uid="${askState.uid}"]`);
+    if (container) {
+      container.querySelectorAll('.ask-option').forEach(btn => btn.classList.add('dimmed'));
+      const otherBtn = container.querySelector('.ask-option-other');
+      if (otherBtn) { otherBtn.classList.remove('dimmed'); otherBtn.classList.add('selected'); }
+    }
+
+    // Send custom text via API-level injection
+    const q = askState.questions[0];
+    ws.send(JSON.stringify({
+      type: 'ask-answer',
+      toolUseId: askState.toolUseId,
+      questions: [{ question: q.question, selectedLabel: customText }],
+    }));
+    askState = null;
+  };
+
+  // --- Multi-question / multi-select: toggle option selection ---
+  window.toggleAskOption = function(uid, qIdx, optIdx) {
+    if (!askState || askState.uid !== uid) return;
+    const q = askState.questions[qIdx];
+    const sel = askState.selections[qIdx];
+
+    if (q.multiSelect) {
+      const pos = sel.indexOf(optIdx);
+      if (pos >= 0) { sel.splice(pos, 1); } else { sel.push(optIdx); }
+    } else {
+      askState.selections[qIdx] = [optIdx];
+    }
+
+    // Update visual state — scoped to this uid + question
+    const container = document.querySelector(`.ask-container[data-ask-uid="${uid}"]`);
+    if (container && q.options) {
+      const qEl = container.querySelectorAll('.ask-question')[qIdx];
+      if (qEl) {
+        qEl.querySelectorAll('.ask-option[data-opt]').forEach(btn => {
+          const oi = parseInt(btn.dataset.opt, 10);
+          btn.classList.toggle('selected', askState.selections[qIdx].includes(oi));
+        });
+      }
+    }
+
+    updateAskSubmitButton(uid);
+  };
+
+  function updateAskSubmitButton(uid) {
+    const container = document.querySelector(`.ask-container[data-ask-uid="${uid}"]`);
+    const btn = container && container.querySelector('.ask-submit');
+    if (!btn || !askState) return;
+    const allAnswered = askState.selections.every(sel => sel.length > 0);
+    btn.disabled = !allAnswered;
+  }
+
+  // --- Submit all selections for multi-question / multi-select ---
+  // Sends all answers via API-level injection (bypasses broken arrow keys in Bun).
+  window.submitAskSelections = function() {
+    if (!ws || ws.readyState !== WebSocket.OPEN || !askState) return;
+
+    // Build the questions+answers array for the ask-answer message
+    const answers = askState.questions.map((q, qIdx) => {
+      const selected = askState.selections[qIdx];
+      let selectedLabel;
+      if (q.multiSelect) {
+        selectedLabel = selected.map(i => q.options[i] ? q.options[i].label : `Option ${i + 1}`).join(', ');
+      } else {
+        const idx = selected[0] || 0;
+        selectedLabel = q.options[idx] ? q.options[idx].label : `Option ${idx + 1}`;
+      }
+      return { question: q.question, selectedLabel };
+    });
+
+    const hasMultiSelect = askState.questions.some(q => q.multiSelect);
+    ws.send(JSON.stringify({
+      type: 'ask-answer',
+      toolUseId: askState.toolUseId,
+      questions: answers,
+      hasMultiSelect,
+    }));
+
+    // Disable submit button but keep selections highlighted for user reference
+    const uid = askState.uid;
+    const container = document.querySelector(`.ask-container[data-ask-uid="${uid}"]`);
+    const btn = container && container.querySelector('.ask-submit');
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Submitted';
+    }
+    askState = null;
+  };
 
   function appendUserMessage(text) {
     const el = document.createElement('div');
@@ -1131,16 +1858,60 @@
     infoEvents.textContent = stats.events;
   }
 
+  // --- Context Window Display ---
+  function getMaxContext(model) {
+    // All current Claude models use 200k context
+    return 200000;
+  }
+
+  function updateContextDisplay() {
+    const maxCtx = getMaxContext(currentModel);
+    // Context %: raw input tokens / max context
+    const ctxPct = Math.min(100, (latestContextTokens / maxCtx) * 100);
+    // Usable context %: how full the usable portion is (Claude Code compresses ~80%)
+    const usableLimit = maxCtx * 0.80;
+    const usablePct = Math.min(100, (latestContextTokens / usableLimit) * 100);
+
+    // Info bar
+    const infoCtx = document.getElementById('infoContext');
+    if (infoCtx) infoCtx.textContent = `${ctxPct.toFixed(1)}%`;
+
+    // Context bar meter
+    const ctxPercent = document.getElementById('ctxPercent');
+    const ctxMeterFill = document.getElementById('ctxMeterFill');
+    const ctxTokens = document.getElementById('ctxTokens');
+    const ctxUsable = document.getElementById('ctxUsable');
+
+    if (ctxPercent) ctxPercent.textContent = `${ctxPct.toFixed(1)}%`;
+    if (ctxTokens) ctxTokens.textContent = `${(latestContextTokens / 1000).toFixed(0)}k / ${(maxCtx / 1000).toFixed(0)}k`;
+    if (ctxUsable) {
+      ctxUsable.textContent = `${usablePct.toFixed(1)}%`;
+      ctxUsable.style.color = usablePct > 90 ? 'var(--accent)' : usablePct > 70 ? 'var(--accent-orange)' : '';
+    }
+    if (ctxMeterFill) {
+      ctxMeterFill.style.width = `${ctxPct}%`;
+      ctxMeterFill.className = 'context-meter-fill'
+        + (ctxPct > 70 ? ' warn' : '')
+        + (ctxPct > 90 ? ' critical' : '');
+    }
+  }
+
   // --- Auto-scroll ---
+  let programmaticScroll = false;
+
   function maybeScrollToBottom() {
     if (!autoScroll) return;
+    programmaticScroll = true;
     requestAnimationFrame(() => {
       conversationEl.scrollTop = conversationEl.scrollHeight;
+      // Reset after a tick so the scroll event from this assignment doesn't flip autoScroll
+      requestAnimationFrame(() => { programmaticScroll = false; });
     });
   }
 
   conversationEl.addEventListener('scroll', () => {
-    const threshold = 50;
+    if (programmaticScroll) return;  // ignore scroll events from our own scrollTo
+    const threshold = 80;
     const atBottom = conversationEl.scrollHeight - conversationEl.scrollTop - conversationEl.clientHeight < threshold;
     autoScroll = atBottom;
   });
@@ -1149,7 +1920,7 @@
   const inputBar = document.getElementById('inputBar');
   const inputField = document.getElementById('inputField');
   const sendBtn = document.getElementById('sendBtn');
-  const quickBtns = ['btnY', 'btnN', 'btn1', 'btn2', 'btn3', 'btnEsc'].map(id => document.getElementById(id));
+  const quickBtns = ['btnAccept', 'btnReject', 'btnMode', 'btnInterrupt', 'btnEsc'].map(id => document.getElementById(id));
 
   function setInputEnabled(enabled) {
     inputField.disabled = !enabled;
@@ -1157,34 +1928,222 @@
     quickBtns.forEach(btn => { if (btn) btn.disabled = !enabled; });
   }
 
+  // --- Suggestion / Autocomplete ---
+  function setSuggestion(text) {
+    currentSuggestion = text;
+    updateSuggestionDisplay();
+  }
+
+  function clearSuggestion() {
+    currentSuggestion = '';
+    updateSuggestionDisplay();
+  }
+
+  function updateSuggestionDisplay() {
+    const overlay = document.getElementById('suggestionOverlay');
+    if (!overlay) return;
+
+    if (currentSuggestion && !inputField.value) {
+      overlay.innerHTML = escapeHtml(currentSuggestion)
+        + '<span class="suggestion-hint"> Tab</span>';
+      overlay.style.display = 'block';
+      inputField.placeholder = '';
+    } else {
+      overlay.textContent = '';
+      overlay.style.display = 'none';
+      if (!inputField.value) {
+        inputField.placeholder = 'Type input for Claude Code...';
+      }
+    }
+  }
+
   // Expose to onclick handlers on quick-action buttons
   window.sendInput = function(data) {
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
     ws.send(JSON.stringify({ type: 'input', data: data }));
+    clearSuggestion();
   };
 
   window.sendInputFromField = function() {
     const text = inputField.value;
     if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
-    // Send text + newline (simulates pressing Enter)
-    ws.send(JSON.stringify({ type: 'input', data: text + '\n' }));
+    // Send text + carriage return (simulates pressing Enter in raw terminal mode)
+    ws.send(JSON.stringify({ type: 'input', data: text + '\r' }));
     inputField.value = '';
+    clearSuggestion();
+  };
+
+  // --- Mode Cycle (Shift+Tab) ---
+  // Cycles through Claude Code's input modes (normal → plan → auto-accept → ...).
+  // We can't track the current mode, so this is just a pass-through.
+  window.cycleMode = function() {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({ type: 'raw-input', data: '\x1b[Z' }));
+  };
+
+  // --- Interrupt (Ctrl+C) ---
+  window.sendInterrupt = function() {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({ type: 'input', data: '\x03' }));
   };
 
   inputField.addEventListener('keydown', (e) => {
+    if (e.key === 'Tab' && currentSuggestion && !inputField.value) {
+      e.preventDefault();
+      inputField.value = currentSuggestion;
+      clearSuggestion();
+      return;
+    }
     if (e.key === 'Enter') {
       e.preventDefault();
       window.sendInputFromField();
     }
+    // Ctrl+C → send interrupt
+    if (e.key === 'c' && e.ctrlKey) {
+      e.preventDefault();
+      window.sendInterrupt();
+    }
+    // Escape → send Esc to Claude Code
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      window.sendInput('\x1b');
+    }
   });
+
+  inputField.addEventListener('input', () => {
+    updateSuggestionDisplay();
+  });
+
+  // --- File Browser / Start Session ---
+  let browseCurrentPath = '';
+
+  window.openFileBrowser = function() {
+    document.getElementById('fileBrowserModal').classList.add('show');
+    browseDirectory('');
+  };
+
+  window.closeFileBrowser = function() {
+    document.getElementById('fileBrowserModal').classList.remove('show');
+  };
+
+  async function browseDirectory(path) {
+    const fileList = document.getElementById('fileList');
+    const pathDisplay = document.getElementById('currentPathDisplay');
+
+    fileList.innerHTML = '<div style="padding: 12px; color: var(--text-muted);">Loading...</div>';
+
+    try {
+      const resp = await fetch(`${getServerBase()}/browse?path=${encodeURIComponent(path)}`);
+      const data = await resp.json();
+
+      if (data.error) {
+        fileList.innerHTML = `<div style="padding: 12px; color: var(--accent);">${escapeHtml(data.error)}</div>`;
+        return;
+      }
+
+      browseCurrentPath = data.currentPath;
+      pathDisplay.textContent = browseCurrentPath;
+
+      fileList.innerHTML = '';
+      for (const item of data.items) {
+        const el = document.createElement('div');
+        el.className = `file-item ${item.isDirectory ? 'directory' : 'file'}`;
+        el.innerHTML = `<span class="file-icon">${item.isDirectory ? '\uD83D\uDCC1' : '\uD83D\uDCC4'}</span><span>${escapeHtml(item.name)}</span>`;
+        if (item.isDirectory) {
+          el.onclick = () => browseDirectory(item.path);
+        }
+        fileList.appendChild(el);
+      }
+    } catch (e) {
+      fileList.innerHTML = `<div style="padding: 12px; color: var(--accent);">Error: ${escapeHtml(e.message)}</div>`;
+    }
+  }
+
+  window.selectCurrentDirectory = async function() {
+    if (!browseCurrentPath) return;
+
+    const startBtn = document.querySelector('.modal-box-footer .btn-modal-primary');
+    if (startBtn) { startBtn.disabled = true; startBtn.textContent = 'Starting...'; }
+
+    try {
+      const resp = await fetch(`${getServerBase()}/start-session`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workingDir: browseCurrentPath,
+          command: 'claude',
+          cols: 120,
+          rows: 40
+        })
+      });
+
+      const result = await resp.json();
+
+      if (result.error) {
+        alert('Error: ' + result.error);
+        return;
+      }
+
+      closeFileBrowser();
+
+      // Poll for the new session to appear
+      let pollCount = 0;
+      const pollTimer = setInterval(async () => {
+        await refreshSessions();
+        pollCount++;
+        // Auto-connect to the new session once it appears
+        const newSession = sessions.find(s => {
+          const meta = s.metadata || {};
+          return meta.cwd === browseCurrentPath &&
+                 (Date.now() - new Date(s.created).getTime()) < 30000;
+        });
+        if (newSession) {
+          clearInterval(pollTimer);
+          connectToSession(newSession.id);
+        }
+        if (pollCount >= 15) clearInterval(pollTimer);
+      }, 2000);
+
+    } catch (e) {
+      alert('Error starting session: ' + e.message);
+    } finally {
+      if (startBtn) { startBtn.disabled = false; startBtn.textContent = 'Start Session Here'; }
+    }
+  };
 
   // --- Initialize ---
   setStatus('disconnected', 'No session');
   refreshSessions();
   setInterval(refreshSessions, 10000);
 
+  // Auto-connect if ?session=<id> is in the URL
+  const urlParams = new URLSearchParams(window.location.search);
+  const autoSession = urlParams.get('session');
+  if (autoSession) {
+    // Wait briefly for session list to load, then connect
+    setTimeout(() => connectToSession(autoSession), 500);
+  }
+
 })();
 </script>
+
+<!-- File Browser Modal -->
+<div class="modal-overlay" id="fileBrowserModal">
+  <div class="modal-box">
+    <div class="modal-box-header">
+      <h3>Select Directory</h3>
+      <button class="modal-box-close" onclick="closeFileBrowser()">&times;</button>
+    </div>
+    <div class="modal-box-body">
+      <div class="current-path-display" id="currentPathDisplay"></div>
+      <div class="file-list" id="fileList"></div>
+    </div>
+    <div class="modal-box-footer">
+      <button class="btn-modal btn-modal-secondary" onclick="closeFileBrowser()">Cancel</button>
+      <button class="btn-modal btn-modal-primary" onclick="selectCurrentDirectory()">Start Session Here</button>
+    </div>
+  </div>
+</div>
 
 </body>
 </html>
