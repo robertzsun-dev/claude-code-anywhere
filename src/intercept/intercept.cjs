@@ -462,6 +462,13 @@ function truncate(str, max) {
   return str.length > max ? str.slice(0, max) + '...[truncated]' : str;
 }
 
+function detectMode(body) {
+  const toolNames = (body.tools || []).map(t => t.name).filter(Boolean);
+  if (toolNames.includes('ExitPlanMode')) return 'plan';
+  if (toolNames.includes('EnterPlanMode')) return 'normal';
+  return null;
+}
+
 function extractRequestInfo(body) {
   const info = {
     model: body.model,
@@ -470,6 +477,7 @@ function extractRequestInfo(body) {
     messages_count: body.messages?.length || 0,
     has_system: !!body.system,
     tools: (body.tools || []).map(t => t.name).filter(Boolean),
+    mode: detectMode(body),
   };
 
   // Extract the most recent user turn for display

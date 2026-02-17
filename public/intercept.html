@@ -1132,14 +1132,9 @@
       infoModel.textContent = data.model;
     }
 
-    // Detect mode from tools list
-    if (data.tools && !isInternalCall) {
-      const tools = data.tools;
-      if (tools.includes('ExitPlanMode')) {
-        currentMode = 'plan';
-      } else if (tools.includes('EnterPlanMode')) {
-        currentMode = 'normal';
-      }
+    // Update mode from interceptor's detection
+    if (data.mode && !isInternalCall) {
+      currentMode = data.mode;
       updateModeButton();
     }
 
@@ -2007,15 +2002,14 @@
     }
   }
 
-  const MODE_CYCLE = ['normal', 'plan', 'auto-accept'];
-
   window.cycleMode = function() {
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
     ws.send(JSON.stringify({ type: 'raw-input', data: '\x1b[Z' }));
-    // Optimistically update — next API request will correct if out of sync
-    const idx = MODE_CYCLE.indexOf(currentMode);
-    currentMode = MODE_CYCLE[(idx + 1) % MODE_CYCLE.length];
-    updateModeButton();
+    // Show brief "switching" state — next API request will set the real mode
+    if (btnMode) {
+      btnMode.textContent = '...';
+      btnMode.classList.remove('qa-plan', 'qa-accept', 'qa-normal');
+    }
   };
 
   // --- Interrupt (Ctrl+C) ---
