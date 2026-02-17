@@ -606,6 +606,7 @@
     .qa-accept { background: rgba(76, 175, 80, 0.15); border-color: var(--accent-green); color: var(--accent-green); }
     .qa-reject { background: rgba(233, 69, 96, 0.15); border-color: var(--accent); color: var(--accent); }
     .qa-plan { background: rgba(187, 134, 252, 0.15); border-color: var(--accent-purple); color: var(--accent-purple); }
+    .qa-normal { background: rgba(100, 181, 246, 0.15); border-color: var(--accent-blue); color: var(--accent-blue); }
     .qa-interrupt { background: rgba(255, 152, 0, 0.15); border-color: var(--accent-orange); color: var(--accent-orange); }
 
     .qa-sep {
@@ -816,7 +817,7 @@
         <button class="qa-btn qa-accept" onclick="sendInput('y')" id="btnAccept" disabled>Accept</button>
         <button class="qa-btn qa-reject" onclick="sendInput('n')" id="btnReject" disabled>Reject</button>
         <span class="qa-sep"></span>
-        <button class="qa-btn qa-plan" onclick="cycleMode()" id="btnMode" disabled>Mode</button>
+        <button class="qa-btn qa-normal" onclick="cycleMode()" id="btnMode" disabled>Normal</button>
         <button class="qa-btn qa-interrupt" onclick="sendInterrupt()" id="btnInterrupt" disabled>Interrupt</button>
         <span class="qa-sep"></span>
         <button class="qa-small" onclick="sendInput('\x1b')" id="btnEsc" disabled>Esc</button>
@@ -850,6 +851,7 @@
   let suggestionText = ''; // Accumulated text during suggestion streaming
   let currentSuggestion = ''; // Current autocomplete suggestion shown in input
   let latestContextTokens = 0; // Input tokens from the most recent API call (= context usage)
+  let currentMode = 'normal'; // Detected from tools: 'normal', 'plan', or 'auto-accept'
   let stats = {
     inputTokens: 0,
     outputTokens: 0,
@@ -938,6 +940,7 @@
 
     currentSessionId = sessionId;
     currentModel = null;
+    currentMode = 'normal';
     currentMessageBlocks = [];
     activeBlockIndex = -1;
     lastUserText = null;
@@ -1127,6 +1130,17 @@
     if (data.model && !isInternalCall) {
       currentModel = data.model;
       infoModel.textContent = data.model;
+    }
+
+    // Detect mode from tools list
+    if (data.tools && !isInternalCall) {
+      const tools = data.tools;
+      if (tools.includes('ExitPlanMode')) {
+        currentMode = 'plan';
+      } else if (tools.includes('EnterPlanMode')) {
+        currentMode = 'normal';
+      }
+      updateModeButton();
     }
 
     // Show user's turn if available (deduplicate, skip internal calls)
@@ -1975,7 +1989,24 @@
 
   // --- Mode Cycle (Shift+Tab) ---
   // Cycles through Claude Code's input modes (normal → plan → auto-accept → ...).
-  // We can't track the current mode, so this is just a pass-through.
+  // Mode is detected from the tools list in API requests and shown on the button.
+  const btnMode = document.getElementById('btnMode');
+
+  function updateModeButton() {
+    if (!btnMode) return;
+    const labels = { normal: 'Normal', plan: 'Plan', 'auto-accept': 'Auto' };
+    btnMode.textContent = labels[currentMode] || 'Mode';
+    // Swap style class to reflect mode
+    btnMode.classList.remove('qa-plan', 'qa-accept', 'qa-normal');
+    if (currentMode === 'plan') {
+      btnMode.classList.add('qa-plan');
+    } else if (currentMode === 'auto-accept') {
+      btnMode.classList.add('qa-accept');
+    } else {
+      btnMode.classList.add('qa-normal');
+    }
+  }
+
   window.cycleMode = function() {
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
     ws.send(JSON.stringify({ type: 'raw-input', data: '\x1b[Z' }));
