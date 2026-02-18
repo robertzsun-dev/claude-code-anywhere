@@ -31,6 +31,7 @@
       background: var(--bg);
       color: var(--text);
       height: 100vh;
+      height: 100dvh;
       display: flex;
       flex-direction: column;
       overflow: hidden;
@@ -757,6 +758,27 @@
     @media (max-width: 768px) {
       .sidebar { display: none; }
       .conversation { padding: 12px; }
+      .header { padding: 6px 12px; }
+      .header h1 { font-size: 14px; }
+      .info-bar { padding: 4px 12px; gap: 8px; font-size: 11px; flex-wrap: wrap; }
+      .stats-bar { padding: 3px 12px; gap: 8px; font-size: 10px; }
+      .context-bar { padding: 3px 12px; font-size: 10px; }
+      .input-bar { padding: 6px 8px; gap: 4px; flex-wrap: wrap; }
+      .quick-actions { gap: 3px; order: 2; width: 100%; }
+      .input-wrapper { order: 1; flex-basis: 100%; }
+      .input-bar .send-btn { order: 1; }
+      .qa-btn { padding: 5px 8px; font-size: 11px; }
+      .qa-small { padding: 5px 8px; font-size: 11px; }
+      .qa-sep { display: none; }
+      .message-body { padding: 8px 12px; font-size: 13px; }
+      .message { margin-bottom: 10px; }
+    }
+
+    @media (max-height: 700px) {
+      .header { padding: 4px 12px; }
+      .info-bar { display: none !important; }
+      .stats-bar { display: none !important; }
+      .context-bar { padding: 2px 12px; }
     }
   </style>
 </head>
