@@ -325,6 +325,9 @@ function connectRelay() {
           viewerMode = msg.mode || 'normal';
           debug('viewer mode set to:', viewerMode);
           relay({ type: 'mode-change', mode: viewerMode, ts: Date.now() });
+        } else if (msg.type === 'shutdown') {
+          debug('shutdown requested by server, exiting');
+          process.exit(0);
         }
       } catch (e) {
         // Ignore parse errors

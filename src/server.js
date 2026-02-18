@@ -321,6 +321,12 @@ function handleViewerMessage(ws, clientId, message) {
       session.interceptorWs.send(JSON.stringify(message));
       break;
 
+    case 'close-session':
+      console.log(`[Session] Viewer requested close for session ${client.sessionId}`);
+      shutdownInterceptor(session);
+      reapSession(client.sessionId, 'closed by viewer');
+      break;
+
     default:
       console.warn(`[Viewer] Unknown message type: ${message.type}`);
   }
@@ -512,6 +518,14 @@ function isPidAlive(pid) {
   } catch (e) {
     // ESRCH = no such process, EPERM = process exists but we can't signal it (still alive)
     return e.code === 'EPERM';
+  }
+}
+
+// Tell the interceptor to exit, then close its WebSocket
+function shutdownInterceptor(session) {
+  if (session.interceptorWs && session.interceptorWs.readyState === 1) {
+    session.interceptorWs.send(JSON.stringify({ type: 'shutdown' }));
+    session.interceptorWs.close();
   }
 }
 
@@ -928,6 +942,18 @@ async function handleHttpRequest(req, res) {
   } else if (req.url === '/start-session' && req.method === 'POST') {
     // Start new session endpoint
     handleStartSession(req, res);
+  } else if (req.url.startsWith('/sessions/') && req.method === 'DELETE') {
+    const sessionId = req.url.split('/')[2];
+    const session = sessions.get(sessionId);
+    if (!session) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Session not found' }));
+    } else {
+      shutdownInterceptor(session);
+      reapSession(sessionId, 'closed via API');
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true }));
+    }
   } else {
     res.writeHead(404);
     res.end('Not found');

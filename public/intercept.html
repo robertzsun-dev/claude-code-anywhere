@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Claude Code - Structured Viewer</title>
   <style>
     :root {
@@ -130,6 +130,27 @@
     .session-type.pty { background: #2d4a2d; color: var(--accent-green); }
     .session-type.intercept { background: #2d2d4a; color: var(--accent-purple); }
 
+    .session-item .session-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .session-close {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 14px;
+      cursor: pointer;
+      padding: 2px 6px;
+      border-radius: 4px;
+      line-height: 1;
+      opacity: 0;
+      transition: opacity 0.15s, color 0.15s;
+    }
+    .session-item:hover .session-close { opacity: 1; }
+    .session-close:hover { color: var(--accent); background: rgba(233, 69, 96, 0.15); }
+
     .session-item .session-meta {
       font-size: 11px;
       color: var(--text-muted);
@@ -231,27 +252,34 @@
 
     /* --- Tool use blocks --- */
     .tool-use {
-      margin: 8px 0;
+      margin: 4px 0;
       border: 1px solid var(--border);
-      border-radius: 6px;
+      border-radius: 4px;
       overflow: hidden;
     }
 
     .tool-use-header {
       background: var(--bg-tertiary);
-      padding: 8px 12px;
-      font-size: 12px;
+      padding: 4px 10px;
+      font-size: 11px;
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
       cursor: pointer;
     }
 
-    .tool-use-header .tool-icon { color: var(--accent-orange); }
+    .tool-use-header .tool-icon { color: var(--accent-orange); font-size: 10px; }
     .tool-use-header .tool-name {
       font-family: monospace;
       font-weight: 600;
+      font-size: 11px;
       color: var(--accent-orange);
+    }
+
+    .tool-use-header .tool-expand {
+      margin-left: auto;
+      color: var(--text-muted);
+      font-size: 10px;
     }
 
     .tool-use-body {
@@ -264,27 +292,33 @@
       max-height: 300px;
       overflow-y: auto;
       color: var(--text-muted);
+      display: none;
     }
 
-    .tool-use-body.collapsed {
-      display: none;
+    .tool-use-body.expanded {
+      display: block;
     }
 
     /* --- Tool result blocks --- */
     .tool-result {
-      margin: 8px 0;
+      margin: 2px 0;
       border: 1px solid var(--border);
-      border-radius: 6px;
+      border-radius: 4px;
       overflow: hidden;
     }
 
     .tool-result-header {
-      padding: 8px 12px;
-      font-size: 12px;
+      padding: 4px 10px;
+      font-size: 11px;
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
       cursor: pointer;
+    }
+    .tool-result-header .tool-expand {
+      margin-left: auto;
+      color: var(--text-muted);
+      font-size: 10px;
     }
     .tool-result-header.success { background: var(--tool-bg); }
     .tool-result-header.error { background: var(--error-bg); }
@@ -298,10 +332,11 @@
       word-break: break-all;
       max-height: 300px;
       overflow-y: auto;
+      display: none;
     }
 
-    .tool-result-body.collapsed {
-      display: none;
+    .tool-result-body.expanded {
+      display: block;
     }
 
     /* --- Streaming indicator --- */
@@ -320,26 +355,40 @@
 
     /* --- Thinking blocks --- */
     .thinking-block {
-      margin: 8px 0;
-      padding: 8px 12px;
+      margin: 4px 0;
+      padding: 4px 10px;
       background: rgba(187, 134, 252, 0.1);
       border: 1px solid rgba(187, 134, 252, 0.2);
-      border-radius: 6px;
-      font-size: 12px;
+      border-radius: 4px;
+      font-size: 11px;
       color: var(--accent-purple);
       font-style: italic;
     }
 
     .thinking-header {
       font-weight: 600;
-      margin-bottom: 4px;
       cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .thinking-header .tool-expand {
+      margin-left: auto;
+      font-size: 10px;
+      font-style: normal;
     }
 
     .thinking-content {
       white-space: pre-wrap;
       max-height: 200px;
       overflow-y: auto;
+      display: none;
+      margin-top: 4px;
+    }
+
+    .thinking-content.expanded {
+      display: block;
     }
 
     .thinking-content.collapsed { display: none; }
@@ -359,18 +408,35 @@
 
     /* --- Request info --- */
     .request-info {
-      margin: 12px 0;
-      padding: 8px 12px;
+      margin: 4px 0;
+      padding: 3px 10px;
       background: var(--bg-secondary);
-      border: 1px dashed var(--border);
-      border-radius: 6px;
-      font-size: 11px;
+      border-radius: 4px;
+      font-size: 10px;
       color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
     }
 
     .request-info .model-tag {
       color: var(--accent-green);
       font-weight: 600;
+    }
+
+    .request-info .req-details {
+      display: none;
+      margin-left: 6px;
+    }
+
+    .request-info.expanded .req-details {
+      display: inline;
+    }
+
+    .request-info .tool-expand {
+      margin-left: auto;
+      font-size: 9px;
     }
 
     /* --- Stats bar --- */
@@ -424,28 +490,34 @@
       padding: 8px 16px;
       display: flex;
       gap: 8px;
-      align-items: center;
+      align-items: flex-end;
       flex-shrink: 0;
     }
 
     .input-wrapper {
       flex: 1;
       position: relative;
+      min-width: 0;
     }
 
-    .input-wrapper input {
+    .input-wrapper textarea {
       width: 100%;
       background: var(--code-bg);
       border: 1px solid var(--border);
       border-radius: 6px;
-      padding: 8px 12px;
+      padding: 7px 12px;
       color: var(--text);
       font-size: 14px;
       font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
       outline: none;
+      resize: none;
+      overflow-y: hidden;
+      line-height: 1.4;
+      min-height: 34px;
+      max-height: 150px;
     }
-    .input-wrapper input:focus { border-color: var(--accent-blue); }
-    .input-wrapper input:disabled { opacity: 0.5; }
+    .input-wrapper textarea:focus { border-color: var(--accent-blue); }
+    .input-wrapper textarea:disabled { opacity: 0.5; }
 
     .suggestion-overlay {
       position: absolute;
@@ -575,10 +647,12 @@
       color: #fff;
       border: none;
       border-radius: 6px;
-      padding: 8px 16px;
+      padding: 0 16px;
+      height: 34px;
       font-size: 13px;
       cursor: pointer;
       white-space: nowrap;
+      flex-shrink: 0;
     }
     .input-bar .send-btn:hover { opacity: 0.9; }
     .input-bar .send-btn:disabled { opacity: 0.4; cursor: default; }
@@ -591,7 +665,8 @@
     }
 
     .qa-btn {
-      padding: 6px 12px;
+      padding: 0 12px;
+      height: 30px;
       border-radius: 5px;
       font-size: 12px;
       font-weight: 600;
@@ -622,7 +697,8 @@
       color: var(--text);
       border: 1px solid var(--border);
       border-radius: 4px;
-      padding: 6px 10px;
+      padding: 0 10px;
+      height: 30px;
       font-size: 12px;
       font-family: monospace;
       cursor: pointer;
@@ -754,21 +830,57 @@
     ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
     ::-webkit-scrollbar-thumb:hover { background: #444; }
 
+    /* --- Hamburger button (mobile only) --- */
+    .hamburger {
+      display: none;
+      background: none;
+      border: none;
+      color: var(--text);
+      font-size: 22px;
+      cursor: pointer;
+      padding: 4px 8px;
+      line-height: 1;
+      flex-shrink: 0;
+    }
+
+    /* --- Sidebar overlay backdrop (mobile only) --- */
+    .sidebar-backdrop {
+      display: none;
+      position: fixed;
+      z-index: 99;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0, 0, 0, 0.5);
+    }
+    .sidebar-backdrop.show { display: block; }
+
     /* --- Responsive --- */
     @media (max-width: 768px) {
-      .sidebar { display: none; }
+      .hamburger { display: block; }
+      .sidebar {
+        display: flex;
+        position: fixed;
+        z-index: 100;
+        top: 0; left: 0;
+        height: 100dvh;
+        width: 280px;
+        transform: translateX(-100%);
+        transition: transform 0.25s ease;
+      }
+      .sidebar.open { transform: translateX(0); }
       .conversation { padding: 12px; }
       .header { padding: 6px 12px; }
       .header h1 { font-size: 14px; }
       .info-bar { padding: 4px 12px; gap: 8px; font-size: 11px; flex-wrap: wrap; }
       .stats-bar { padding: 3px 12px; gap: 8px; font-size: 10px; }
       .context-bar { padding: 3px 12px; font-size: 10px; }
-      .input-bar { padding: 6px 8px; gap: 4px; flex-wrap: wrap; }
-      .quick-actions { gap: 3px; order: 2; width: 100%; }
-      .input-wrapper { order: 1; flex-basis: 100%; }
-      .input-bar .send-btn { order: 1; }
-      .qa-btn { padding: 5px 8px; font-size: 11px; }
-      .qa-small { padding: 5px 8px; font-size: 11px; }
+      .input-bar { padding: 6px 8px; gap: 6px; flex-wrap: wrap; }
+      .input-wrapper textarea { font-size: 16px; padding: 8px 10px; min-height: 36px; }
+      .input-wrapper { order: 1; flex: 1; min-width: 0; }
+      .input-bar .send-btn { order: 1; height: 36px; padding: 0 14px; font-size: 14px; }
+      .quick-actions { order: 2; width: 100%; gap: 4px; justify-content: center; flex-wrap: wrap; }
+      .qa-btn { height: 28px; padding: 0 10px; font-size: 11px; }
+      .qa-small { height: 28px; padding: 0 8px; font-size: 11px; }
       .qa-sep { display: none; }
       .message-body { padding: 8px 12px; font-size: 13px; }
       .message { margin-bottom: 10px; }
@@ -785,6 +897,7 @@
 <body>
 
 <div class="header">
+  <button class="hamburger" id="hamburgerBtn" onclick="toggleSidebar()">&#9776;</button>
   <h1>Claude Code - Structured Viewer</h1>
   <div class="status">
     <div class="status-dot" id="statusDot"></div>
@@ -792,8 +905,10 @@
   </div>
 </div>
 
+<div class="sidebar-backdrop" id="sidebarBackdrop" onclick="closeSidebar()"></div>
+
 <div class="layout">
-  <div class="sidebar">
+  <div class="sidebar" id="sidebar">
     <h2>Sessions</h2>
     <button class="new-session-btn" onclick="openFileBrowser()">+ Start New Session</button>
     <div class="session-list" id="sessionList">
@@ -845,7 +960,7 @@
         <button class="qa-small" onclick="sendInput('\x1b')" id="btnEsc" disabled>Esc</button>
       </div>
       <div class="input-wrapper">
-        <input type="text" id="inputField" placeholder="Type input for Claude Code..." disabled />
+        <textarea id="inputField" rows="1" placeholder="Type input for Claude Code..." disabled></textarea>
         <span class="suggestion-overlay" id="suggestionOverlay"></span>
       </div>
       <button class="send-btn" id="sendBtn" onclick="sendInputFromField()" disabled>Send</button>
@@ -857,11 +972,26 @@
 (function() {
   'use strict';
 
+  // --- Sidebar toggle (mobile) ---
+  window.toggleSidebar = function() {
+    const sidebar = document.getElementById('sidebar');
+    const backdrop = document.getElementById('sidebarBackdrop');
+    sidebar.classList.toggle('open');
+    backdrop.classList.toggle('show', sidebar.classList.contains('open'));
+  };
+  window.closeSidebar = function() {
+    document.getElementById('sidebar').classList.remove('open');
+    document.getElementById('sidebarBackdrop').classList.remove('show');
+  };
+
   // --- State ---
   let ws = null;
   let currentSessionId = null;
   let sessions = [];
   let autoScroll = true;
+  let reconnectTimer = null;
+  let reconnectDelay = 1000;
+  const RECONNECT_MAX_DELAY = 30000;
 
   // Conversation state (accumulated from SSE events)
   let currentModel = null;
@@ -931,9 +1061,12 @@
 
       return `
         <div class="session-item ${isActive ? 'active' : ''}" onclick="selectSession('${s.id}')">
-          <div>
-            <span class="session-id">${s.id.slice(0, 8)}</span>
-            <span class="session-type ${typeClass}">${typeClass}</span>
+          <div class="session-row">
+            <div>
+              <span class="session-id">${s.id.slice(0, 8)}</span>
+              <span class="session-type ${typeClass}">${typeClass}</span>
+            </div>
+            <button class="session-close" onclick="event.stopPropagation(); closeSession('${s.id}')" title="Close session">&times;</button>
           </div>
           <div class="session-meta">${hostInfo} &middot; ${age}</div>
         </div>
@@ -953,46 +1086,111 @@
     connectToSession(sessionId);
   };
 
+  window.closeSession = async function(sessionId) {
+    if (!confirm('Close this session?')) return;
+    try {
+      const resp = await fetch(`${getServerBase()}/sessions/${sessionId}`, { method: 'DELETE' });
+      const data = await resp.json();
+      if (data.error) {
+        alert('Error: ' + data.error);
+      }
+    } catch (e) {
+      alert('Error closing session: ' + e.message);
+    }
+    // If we just closed our active session, clear UI
+    if (sessionId === currentSessionId) {
+      cancelReconnect();
+      currentSessionId = null;
+      if (ws) { intentionalClose = true; ws.close(); ws = null; intentionalClose = false; }
+      conversationEl.innerHTML = '<div class="empty-state"><h2>Session Closed</h2><p>Select another session from the sidebar.</p></div>';
+      setStatus('disconnected', 'No session');
+      setInputEnabled(false);
+      infoBar.style.display = 'none';
+      statsBar.style.display = 'none';
+      document.getElementById('contextBar').style.display = 'none';
+      document.getElementById('inputBar').style.display = 'none';
+    }
+    refreshSessions();
+  };
+
   // --- WebSocket Session Connection ---
+  function cancelReconnect() {
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    reconnectDelay = 1000;
+  }
+
+  function scheduleReconnect() {
+    if (reconnectTimer || !currentSessionId) return;
+    setStatus('disconnected', `Reconnecting in ${(reconnectDelay / 1000).toFixed(0)}s...`);
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      if (!currentSessionId) return;
+      reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_MAX_DELAY);
+      doConnect(currentSessionId, false);
+    }, reconnectDelay);
+  }
+
   function connectToSession(sessionId) {
+    cancelReconnect();
+    doConnect(sessionId, true);
+    closeSidebar();
+  }
+
+  let intentionalClose = false;
+
+  function doConnect(sessionId, isNewSession) {
     if (ws) {
+      intentionalClose = true;
       ws.close();
       ws = null;
+      intentionalClose = false;
     }
 
     currentSessionId = sessionId;
-    currentModel = null;
-    currentMode = 'normal';
-    currentMessageBlocks = [];
-    activeBlockIndex = -1;
-    lastUserText = null;
-    stats = { inputTokens: 0, outputTokens: 0, apiCalls: 0, toolCalls: 0, events: 0 };
-    latestContextTokens = 0;
 
-    // Clear conversation
-    conversationEl.innerHTML = '';
+    if (isNewSession) {
+      currentModel = null;
+      currentMode = 'normal';
+      currentMessageBlocks = [];
+      activeBlockIndex = -1;
+      lastUserText = null;
+      stats = { inputTokens: 0, outputTokens: 0, apiCalls: 0, toolCalls: 0, events: 0 };
+      latestContextTokens = 0;
+      conversationEl.innerHTML = '';
+    }
+
     infoBar.style.display = 'flex';
     statsBar.style.display = 'flex';
     document.getElementById('contextBar').style.display = 'flex';
     document.getElementById('inputBar').style.display = 'flex';
     infoSession.textContent = sessionId.slice(0, 8);
 
+    setStatus('disconnected', 'Connecting...');
+
     const url = `${getWsUrl()}/?role=viewer&session=${sessionId}`;
     ws = new WebSocket(url);
 
     ws.onopen = () => {
+      cancelReconnect();
       setStatus('connected', 'Connected');
       setInputEnabled(true);
+      if (!isNewSession) {
+        appendSystemMessage('Reconnected');
+      }
     };
 
     ws.onclose = () => {
+      if (intentionalClose) return;
       setStatus('disconnected', 'Disconnected');
       setInputEnabled(false);
+      scheduleReconnect();
     };
 
     ws.onerror = () => {
-      setStatus('disconnected', 'Connection error');
-      setInputEnabled(false);
+      // onclose will fire after this, which triggers reconnect
     };
 
     ws.onmessage = (evt) => {
@@ -1072,6 +1270,14 @@
       case 'exit':
         appendSystemMessage(`Session ended (code: ${msg.code || 0})`);
         setInputEnabled(false);
+        cancelReconnect();
+        break;
+      case 'session-reaped':
+        appendSystemMessage(`Session closed${msg.reason ? ': ' + msg.reason : ''}`);
+        setInputEnabled(false);
+        cancelReconnect();
+        currentSessionId = null;
+        refreshSessions();
         break;
       case 'error':
         appendSystemMessage(`Error: ${msg.error}`);
@@ -1103,6 +1309,8 @@
     const t = text.trim();
     if (t.includes('<system-reminder>')) return true;
     if (t.startsWith('<system')) return true;
+    if (t.includes('<command-name>')) return true;
+    if (t.includes('<local-command-')) return true;
     if (t === 'foo') return true;
     return false;
   }
@@ -1162,6 +1370,8 @@
 
 
     // Show user's turn if available (deduplicate, skip internal calls)
+    // Only show text from messages that are pure user input — skip messages
+    // that contain tool_result blocks (those are tool responses, not user text)
     if (!isInternalCall && data.last_turn && data.last_turn.length > 0) {
       for (const turn of data.last_turn) {
         if (turn.type === 'text' && turn.text) {
@@ -1170,6 +1380,14 @@
             appendUserMessage(turn.text);
           }
         } else if (turn.blocks) {
+          const hasToolResult = turn.blocks.some(b => b.type === 'tool_result');
+          if (hasToolResult) continue;
+          // Skip entire turn if any block is system context (post-compaction context
+          // re-injection puts summary text alongside <system-reminder> blocks in one message)
+          const hasSystemContext = turn.blocks.some(b =>
+            b.type === 'text' && b.text && isInternalContent(b.text)
+          );
+          if (hasSystemContext) continue;
           for (const block of turn.blocks) {
             if (block.type === 'text' && block.text) {
               if (block.text !== lastUserText && !isInternalContent(block.text)) {
@@ -1184,16 +1402,12 @@
 
     // Don't show request info lines for internal calls
     if (!isInternalCall) {
-      const toolsStr = data.tools && data.tools.length > 0
-        ? `Tools: ${data.tools.join(', ')}`
-        : '';
-      const reqInfo = [
-        data.model && `Model: ${data.model}`,
-        `Messages: ${data.messages_count}`,
-        toolsStr,
-      ].filter(Boolean).join(' | ');
-
-      appendRequestInfo(reqInfo);
+      const model = data.model || 'unknown';
+      const detailParts = [`Messages: ${data.messages_count}`];
+      if (data.tools && data.tools.length > 0) {
+        detailParts.push(`Tools: ${data.tools.join(', ')}`);
+      }
+      appendRequestInfo(model, detailParts.join(' | '));
     }
     updateStats();
   }
@@ -1519,8 +1733,9 @@
     const el = document.createElement('div');
     el.className = 'thinking-block';
     el.innerHTML = `
-      <div class="thinking-header" onclick="this.nextElementSibling.classList.toggle('collapsed')">
+      <div class="thinking-header" onclick="toggleExpand(this)">
         Thinking...
+        <span class="tool-expand">&#9654;</span>
       </div>
       <div class="thinking-content"></div>
     `;
@@ -1544,15 +1759,22 @@
     maybeScrollToBottom();
   }
 
+  window.toggleExpand = function(headerEl) {
+    const body = headerEl.nextElementSibling;
+    body.classList.toggle('expanded');
+    const arrow = headerEl.querySelector('.tool-expand');
+    if (arrow) arrow.textContent = body.classList.contains('expanded') ? '\u25BC' : '\u25B6';
+  };
+
   function appendToolUseStart(name, id) {
     const body = getCurrentAssistantBody();
     const el = document.createElement('div');
     el.className = 'tool-use';
     el.innerHTML = `
-      <div class="tool-use-header" onclick="this.nextElementSibling.classList.toggle('collapsed')">
+      <div class="tool-use-header" onclick="toggleExpand(this)">
         <span class="tool-icon">&#9881;</span>
         <span class="tool-name">${escapeHtml(name || 'unknown')}</span>
-        <span style="color: var(--text-muted); font-size: 11px;">${id ? id.slice(0, 12) : ''}</span>
+        <span class="tool-expand">&#9654;</span>
       </div>
       <div class="tool-use-body"></div>
     `;
@@ -1581,9 +1803,10 @@
     el.className = 'tool-result';
     el.innerHTML = `
       <div class="tool-result-header ${isError ? 'error' : 'success'}"
-           onclick="this.nextElementSibling.classList.toggle('collapsed')">
+           onclick="toggleExpand(this)">
         <span>${isError ? '&#10060;' : '&#9989;'}</span>
-        <span>Tool Result${toolUseId ? ' (' + toolUseId.slice(0, 12) + ')' : ''}</span>
+        <span>Result</span>
+        <span class="tool-expand">&#9654;</span>
       </div>
       <div class="tool-result-body">${escapeHtml(content || '(empty)')}</div>
     `;
@@ -1675,10 +1898,13 @@
     html += '</div>';
 
     toolBody.innerHTML = html;
-    toolBody.classList.remove('collapsed');
+    toolBody.classList.add('expanded');
     toolBody.style.maxHeight = 'none';
     toolBody.style.background = 'transparent';
     toolBody.style.padding = '4px 8px';
+    // Update the expand arrow to show it's open
+    const arrow = toolBody.previousElementSibling.querySelector('.tool-expand');
+    if (arrow) arrow.textContent = '\u25BC';
     maybeScrollToBottom();
   }
 
@@ -1829,13 +2055,13 @@
     maybeScrollToBottom();
   }
 
-  function appendRequestInfo(text) {
+  function appendRequestInfo(model, details) {
     const el = document.createElement('div');
     el.className = 'request-info';
-    el.innerHTML = text.replace(
-      /Model:\s*(\S+)/,
-      'Model: <span class="model-tag">$1</span>'
-    );
+    el.onclick = function() { this.classList.toggle('expanded'); };
+    el.innerHTML = `<span class="model-tag">${escapeHtml(model)}</span>`
+      + `<span class="req-details">${escapeHtml(details)}</span>`
+      + `<span class="tool-expand">&#9654;</span>`;
     conversationEl.appendChild(el);
     maybeScrollToBottom();
   }
@@ -1999,9 +2225,12 @@
   window.sendInputFromField = function() {
     const text = inputField.value;
     if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
-    // Send text + carriage return (simulates pressing Enter in raw terminal mode)
-    ws.send(JSON.stringify({ type: 'input', data: text + '\r' }));
+    // Send text first, then Enter separately so the interceptor's injectStdin
+    // delivers the text immediately and the \r isn't lost in the 50ms delay
+    ws.send(JSON.stringify({ type: 'input', data: text }));
+    ws.send(JSON.stringify({ type: 'input', data: '\r' }));
     inputField.value = '';
+    inputField.style.height = 'auto';
     clearSuggestion();
   };
 
@@ -2041,14 +2270,23 @@
     ws.send(JSON.stringify({ type: 'input', data: '\x03' }));
   };
 
+  function autoResizeTextarea() {
+    inputField.style.height = 'auto';
+    inputField.style.height = inputField.scrollHeight + 'px';
+    // Switch to scrollable if past max-height
+    inputField.style.overflowY = inputField.scrollHeight > 150 ? 'auto' : 'hidden';
+  }
+
   inputField.addEventListener('keydown', (e) => {
     if (e.key === 'Tab' && currentSuggestion && !inputField.value) {
       e.preventDefault();
       inputField.value = currentSuggestion;
       clearSuggestion();
+      autoResizeTextarea();
       return;
     }
-    if (e.key === 'Enter') {
+    // Enter sends, Shift+Enter inserts newline
+    if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       window.sendInputFromField();
     }
@@ -2065,6 +2303,7 @@
   });
 
   inputField.addEventListener('input', () => {
+    autoResizeTextarea();
     updateSuggestionDisplay();
   });
 

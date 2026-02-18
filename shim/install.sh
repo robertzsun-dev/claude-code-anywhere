@@ -252,18 +252,20 @@ case "${SHELL:-}" in
 esac
 
 if [ -n "$SHELL_RC" ]; then
+    # Remove any existing claude-remote source lines (may be in wrong position)
     if grep -q "claude-remote.conf" "$SHELL_RC" 2>/dev/null; then
-        echo -e "${YELLOW}  Already configured in $SHELL_RC${NC}"
-    else
-        read -p "  Add to $SHELL_RC? [Y/n] " -n 1 -r
-        echo ""
-        if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-            echo "" >> "$SHELL_RC"
-            echo "# Claude Code Remote Access" >> "$SHELL_RC"
-            echo "[ -f \"$CONFIG_FILE\" ] && source \"$CONFIG_FILE\"" >> "$SHELL_RC"
-            echo -e "${GREEN}  Added to $SHELL_RC${NC}"
-        fi
+        sed -i '/# Claude Code Remote Access/d' "$SHELL_RC"
+        sed -i '/claude-remote\.conf/d' "$SHELL_RC"
+        echo -e "${YELLOW}  Removed old source line from $SHELL_RC${NC}"
     fi
+    # Always append at the very end so shim PATH takes priority over
+    # any earlier PATH modifications (e.g. ~/.local/bin prepends)
+    echo "" >> "$SHELL_RC"
+    echo "# Claude Code Remote Access (must be last to ensure shim takes priority)" >> "$SHELL_RC"
+    echo "[ -f \"$CONFIG_FILE\" ] && source \"$CONFIG_FILE\"" >> "$SHELL_RC"
+    echo -e "${GREEN}  Added source line to end of $SHELL_RC${NC}"
+else
+    echo -e "${YELLOW}  Unknown shell, add manually: source $CONFIG_FILE${NC}"
 fi
 
 # Clean up legacy shims from previous install approach
@@ -332,6 +334,96 @@ if [ "$LEGACY_CLEANED" = false ]; then
     echo -e "${GREEN}  No legacy installations found${NC}"
 fi
 
+# Step 7: Systemd service (optional)
+echo ""
+echo -e "${CYAN}7. Server systemd service (production mode)...${NC}"
+
+SERVICE_NAME="claude-remote-server.service"
+SERVICE_PATH="/etc/systemd/system/${SERVICE_NAME}"
+INSTALL_SERVICE=false
+
+if ! command -v systemctl &> /dev/null; then
+    echo -e "${YELLOW}  systemd not available, skipping${NC}"
+elif [ -f "$SERVICE_PATH" ]; then
+    echo -e "${YELLOW}  Service already installed at $SERVICE_PATH${NC}"
+    read -p "  Reinstall/update the service? [Y/n] " -n 1 -r
+    echo ""
+    if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+        INSTALL_SERVICE=true
+    fi
+else
+    read -p "  Install systemd service to run the server on boot? [Y/n] " -n 1 -r
+    echo ""
+    if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+        INSTALL_SERVICE=true
+    fi
+fi
+
+if [ "$INSTALL_SERVICE" = true ]; then
+    # Detect node path
+    NODE_BIN=$(which node 2>/dev/null || echo "/usr/bin/node")
+    CURRENT_USER=$(whoami)
+
+    echo -e "${GREEN}  Node.js: $NODE_BIN${NC}"
+    echo -e "${GREEN}  User: $CURRENT_USER${NC}"
+    echo -e "${GREEN}  Working dir: $CLAUDE_REMOTE_DIR${NC}"
+
+    # Generate service file
+    SERVICE_CONTENT="[Unit]
+Description=Claude Code Remote Access Server
+After=network.target
+
+[Service]
+Type=simple
+User=${CURRENT_USER}
+WorkingDirectory=${CLAUDE_REMOTE_DIR}
+ExecStart=${NODE_BIN} src/server.js
+Restart=always
+RestartSec=10
+
+# Environment
+Environment=NODE_ENV=production
+Environment=HOST=0.0.0.0
+Environment=PORT=8085
+
+# Security
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=${CLAUDE_REMOTE_DIR}
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=claude-remote
+
+[Install]
+WantedBy=multi-user.target
+"
+
+    echo "$SERVICE_CONTENT" | sudo tee "$SERVICE_PATH" > /dev/null
+    echo -e "${GREEN}  Wrote: $SERVICE_PATH${NC}"
+
+    # Stop existing service if running
+    if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
+        sudo systemctl stop "$SERVICE_NAME"
+        echo -e "${YELLOW}  Stopped existing service${NC}"
+    fi
+
+    sudo systemctl daemon-reload
+    sudo systemctl enable "$SERVICE_NAME"
+    sudo systemctl start "$SERVICE_NAME"
+
+    # Verify it started
+    sleep 1
+    if systemctl is-active --quiet "$SERVICE_NAME"; then
+        echo -e "${GREEN}  Service started and enabled on boot${NC}"
+    else
+        echo -e "${RED}  Service failed to start. Check: journalctl -u $SERVICE_NAME${NC}"
+    fi
+fi
+
 # Summary
 echo ""
 echo "╔════════════════════════════════════════════════════════════╗"
@@ -345,9 +437,20 @@ echo -e "  3. Shim finds real claude at ${YELLOW}$REAL_CLAUDE${NC}"
 echo -e "  4. API calls are captured and sent to session server"
 echo -e "  5. Claude Code upgrades work normally (real binary untouched)"
 echo ""
+if [ "$INSTALL_SERVICE" = true ] && systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
+    echo -e "${CYAN}Server:${NC}"
+    echo -e "  Status:  ${YELLOW}sudo systemctl status $SERVICE_NAME${NC}"
+    echo -e "  Logs:    ${YELLOW}journalctl -u $SERVICE_NAME -f${NC}"
+    echo -e "  Restart: ${YELLOW}sudo systemctl restart $SERVICE_NAME${NC}"
+    echo ""
+fi
 echo -e "${CYAN}Quick start:${NC}"
 echo -e "  1. ${YELLOW}source $CONFIG_FILE${NC}  (or open new terminal)"
-echo -e "  2. Start server: ${YELLOW}cd $CLAUDE_REMOTE_DIR && npm run server${NC}"
+if [ "$INSTALL_SERVICE" = true ] && systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
+    echo -e "  2. Server is already running via systemd"
+else
+    echo -e "  2. Start server: ${YELLOW}cd $CLAUDE_REMOTE_DIR && npm run server${NC}"
+fi
 echo -e "  3. Use claude:   ${YELLOW}claude${NC}"
 echo -e "  4. View:         ${YELLOW}http://localhost:8085${NC}"
 echo ""

@@ -1,11 +1,22 @@
+# Example systemd service file for Claude Code Remote Access Server
+#
+# The install script (shim/install.sh) auto-generates a service file with
+# your actual paths and username. This file is a reference template.
+#
+# Manual install:
+#   1. Copy to /etc/systemd/system/claude-remote-server.service
+#   2. Edit User, WorkingDirectory, and ExecStart paths
+#   3. sudo systemctl daemon-reload
+#   4. sudo systemctl enable --now claude-remote-server
+
 [Unit]
 Description=Claude Code Remote Access Server
 After=network.target
 
 [Service]
 Type=simple
-User=%i
-WorkingDirectory=/home/%i/claude-code-anywhere
+User=YOUR_USERNAME
+WorkingDirectory=/home/YOUR_USERNAME/claude-code-anywhere
 ExecStart=/usr/bin/node src/server.js
 Restart=always
 RestartSec=10
@@ -20,7 +31,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=/home/%i/claude-code-anywhere
+ReadWritePaths=/home/YOUR_USERNAME/claude-code-anywhere
 
 # Logging
 StandardOutput=journal
