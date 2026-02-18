@@ -18,11 +18,6 @@ import { join, resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import os from 'os';
 
-// Mobile app support modules
-import { DeviceRegistry } from './devices/device-registry.js';
-import { FCMService } from './push/fcm-service.js';
-import { createMobileRoutes } from './api/mobile-routes.js';
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
@@ -46,40 +41,6 @@ const WS_PING_INTERVAL = 30_000;  // Ping every 30s; dead if no pong by next swe
 // Stale session reaper settings
 const REAPER_INTERVAL = 60_000;            // Check every 60s
 const HEARTBEAT_STALE_THRESHOLD = 120_000; // No heartbeat in 2 minutes = suspect
-
-// Mobile app infrastructure
-const deviceRegistry = new DeviceRegistry({
-  persistPath: process.env.DEVICE_REGISTRY_PATH || join(os.homedir(), '.claude-remote', 'devices.json')
-});
-const fcmService = new FCMService();
-
-// Helper to get server URL
-function getServerUrl() {
-  const protocol = USE_HTTPS ? 'https' : 'http';
-  // If bound to 0.0.0.0, try to get actual IP
-  let actualHost = HOST;
-  if (HOST === '0.0.0.0' || HOST === '::') {
-    const nets = os.networkInterfaces();
-    for (const name of Object.keys(nets)) {
-      for (const net of nets[name]) {
-        if (net.family === 'IPv4' && !net.internal) {
-          actualHost = net.address;
-          break;
-        }
-      }
-      if (actualHost !== HOST) break;
-    }
-  }
-  return `${protocol}://${actualHost}:${PORT}`;
-}
-
-// Create mobile routes handler
-const handleMobileRoute = createMobileRoutes({
-  deviceRegistry,
-  sessions,
-  fcmService,
-  getServerUrl
-});
 
 /**
  * Session structure:
@@ -134,44 +95,6 @@ function findSessionByPid(pid) {
   return null;
 }
 
-// Convert intercept events to the HistoryItem format ({type, data, timestamp})
-// used by the mobile app and session-attached messages.
-function eventsToHistory(events) {
-  const items = [];
-  for (const evt of events) {
-    const ts = evt.ts ? new Date(evt.ts).toISOString() : new Date().toISOString();
-    switch (evt.type) {
-      case 'api_request': {
-        const last = evt.data?.last_turn;
-        if (last) items.push({ type: 'input', data: last, timestamp: ts });
-        break;
-      }
-      case 'sse_event': {
-        if (evt.event === 'content_block_delta' && evt.data) {
-          try {
-            const parsed = typeof evt.data === 'string' ? JSON.parse(evt.data) : evt.data;
-            const text = parsed?.delta?.text;
-            if (text) items.push({ type: 'output', data: text, timestamp: ts });
-          } catch (_) { /* ignore */ }
-        }
-        break;
-      }
-      case 'api_response': {
-        const content = evt.data?.content;
-        if (Array.isArray(content)) {
-          const text = content.filter(b => b.type === 'text').map(b => b.text).join('\n');
-          if (text) items.push({ type: 'output', data: text, timestamp: ts });
-        }
-        break;
-      }
-      case 'api_error':
-        items.push({ type: 'output', data: `Error: ${evt.error || 'unknown'}`, timestamp: ts });
-        break;
-    }
-  }
-  return items;
-}
-
 function addToEvents(session, event) {
   session.events.push(event);
   if (session.events.length > session.maxEvents) {
@@ -197,20 +120,8 @@ function handleInterceptorMessage(ws, clientId, message) {
     case 'ask-debug': {
       // Store the event
       addToEvents(session, message);
-      // Broadcast structured event to all viewers (web intercept viewer)
+      // Broadcast structured event to all viewers
       broadcastToSession(session.id, message);
-
-      // Also synthesize 'output' messages for mobile app compatibility.
-      // The mobile app only handles {type:'output', data} messages.
-      if (message.type === 'sse_event' && message.event === 'content_block_delta' && message.data) {
-        try {
-          const parsed = typeof message.data === 'string' ? JSON.parse(message.data) : message.data;
-          const text = parsed?.delta?.text;
-          if (text) {
-            broadcastToSession(session.id, { type: 'output', data: text });
-          }
-        } catch (_) { /* ignore */ }
-      }
       break;
     }
 
@@ -376,9 +287,7 @@ function handleConnection(ws, req) {
       role: 'viewer'
     });
 
-    // Send session info and historical events.
-    // Include both `events` (structured, for web viewer) and `history`
-    // (text items, for mobile app backward compat).
+    // Send session info and historical events
     const events = session.events || [];
     ws.send(JSON.stringify({
       type: 'session-attached',
@@ -386,7 +295,6 @@ function handleConnection(ws, req) {
       sessionType: 'intercept',
       metadata: session.metadata,
       events,
-      history: eventsToHistory(events),
     }));
 
   } else if (role === 'interceptor') {
@@ -885,12 +793,6 @@ if (USE_HTTPS) {
 }
 
 async function handleHttpRequest(req, res) {
-  // Handle mobile API routes first
-  if (req.url.startsWith('/api/')) {
-    const handled = await handleMobileRoute(req, res);
-    if (handled) return;
-  }
-
   // Serve web client — intercept (structured) viewer is the default
   const urlPath = req.url.split('?')[0];
   if (urlPath === '/' || urlPath === '/index.html' || urlPath === '/intercept' || urlPath === '/intercept.html') {
@@ -900,19 +802,6 @@ async function handleHttpRequest(req, res) {
         if (err) {
           res.writeHead(404, { 'Content-Type': 'text/plain' });
           res.end('Web client not found');
-        } else {
-          res.writeHead(200, { 'Content-Type': 'text/html' });
-          res.end(data);
-        }
-      });
-    });
-  } else if (urlPath === '/pair' || urlPath === '/pair.html') {
-    const filePath = join(__dirname, '..', 'public', 'pair.html');
-    import('fs').then(fs => {
-      fs.readFile(filePath, 'utf8', (err, data) => {
-        if (err) {
-          res.writeHead(404, { 'Content-Type': 'text/plain' });
-          res.end('Pairing page not found');
         } else {
           res.writeHead(200, { 'Content-Type': 'text/html' });
           res.end(data);
@@ -993,9 +882,6 @@ httpServer.listen(PORT, HOST, () => {
 // Graceful shutdown
 process.on('SIGINT', () => {
   console.log('\n[Server] Shutting down...');
-
-  // Clean up device registry (persists devices to disk)
-  deviceRegistry.destroy();
 
   // Notify all clients
   for (const [clientId, client] of clients.entries()) {

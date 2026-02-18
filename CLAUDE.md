@@ -478,7 +478,6 @@ Currently only text. To add binary:
 - [ ] Session recording/playback
 - [ ] Session persistence (survive server restart)
 - [ ] Multi-server federation
-- [ ] Mobile app support
 - [ ] End-to-end encryption
 - [ ] Fine-grained access control
 - [ ] Session sharing with permissions
