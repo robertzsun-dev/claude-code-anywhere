@@ -1,6 +1,6 @@
 /**
  * Service Worker for Claude Code Remote PWA
- * Handles offline caching and push notifications
+ * Handles offline caching
  */
 
 const CACHE_NAME = 'claude-remote-v1';
@@ -53,33 +53,3 @@ self.addEventListener('fetch', (event) => {
   );
 });
 
-// Push notification event
-self.addEventListener('push', (event) => {
-  const options = {
-    body: event.data ? event.data.text() : 'Claude needs your attention',
-    icon: '/icon-192.png',
-    badge: '/icon-192.png',
-    vibrate: [200, 100, 200],
-    tag: 'claude-notification',
-    requireInteraction: true,
-    actions: [
-      { action: 'open', title: 'Open', icon: '/icon-192.png' },
-      { action: 'close', title: 'Dismiss', icon: '/icon-192.png' }
-    ]
-  };
-
-  event.waitUntil(
-    self.registration.showNotification('Claude Code Remote', options)
-  );
-});
-
-// Notification click event
-self.addEventListener('notificationclick', (event) => {
-  event.notification.close();
-
-  if (event.action === 'open') {
-    event.waitUntil(
-      clients.openWindow('/')
-    );
-  }
-});

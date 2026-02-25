@@ -18,12 +18,6 @@ import { join, resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import os from 'os';
 
-// Mobile app support modules
-import { InputDetector } from './detection/input-detector.js';
-import { DeviceRegistry } from './devices/device-registry.js';
-import { FCMService } from './push/fcm-service.js';
-import { createMobileRoutes } from './api/mobile-routes.js';
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
@@ -35,121 +29,138 @@ const USE_HTTPS = process.env.HTTPS === 'true' || existsSync(join(__dirname, '..
 const sessions = new Map();
 // Client connections: Map<clientId, {ws, sessionId, role}>
 const clients = new Map();
+// PID-to-session index: Map<pid, sessionId> for reconnection by PID
+const pidIndex = new Map();
 
-// Mobile app infrastructure
-const deviceRegistry = new DeviceRegistry({
-  persistPath: process.env.DEVICE_REGISTRY_PATH || join(os.homedir(), '.claude-remote', 'devices.json')
-});
-const fcmService = new FCMService();
+// Grace period before reaping disconnected sessions
+const INTERCEPT_GRACE_PERIOD = 300_000; // 5 minutes
 
-// Helper to get server URL
-function getServerUrl() {
-  const protocol = USE_HTTPS ? 'https' : 'http';
-  // If bound to 0.0.0.0, try to get actual IP
-  let actualHost = HOST;
-  if (HOST === '0.0.0.0' || HOST === '::') {
-    const nets = os.networkInterfaces();
-    for (const name of Object.keys(nets)) {
-      for (const net of nets[name]) {
-        if (net.family === 'IPv4' && !net.internal) {
-          actualHost = net.address;
-          break;
-        }
-      }
-      if (actualHost !== HOST) break;
-    }
-  }
-  return `${protocol}://${actualHost}:${PORT}`;
-}
+// WebSocket ping/pong settings
+const WS_PING_INTERVAL = 30_000;  // Ping every 30s; dead if no pong by next sweep
 
-// Create mobile routes handler
-const handleMobileRoute = createMobileRoutes({
-  deviceRegistry,
-  sessions,
-  fcmService,
-  getServerUrl
-});
-
-// Send push notification to subscribed devices when input is detected
-async function notifyDevicesOfWaiting(waitingInfo) {
-  if (!fcmService.isEnabled()) return;
-
-  const devices = deviceRegistry.getDevicesForSession(waitingInfo.sessionId);
-  for (const device of devices) {
-    const result = await fcmService.sendWaitingNotification(device, waitingInfo);
-    if (result.shouldRemove) {
-      // Invalid token, remove the FCM token
-      deviceRegistry.updateFcmToken(device.deviceId, null);
-    }
-  }
-}
+// Stale session reaper settings
+const REAPER_INTERVAL = 60_000;            // Check every 60s
+const HEARTBEAT_STALE_THRESHOLD = 120_000; // No heartbeat in 2 minutes = suspect
 
 /**
  * Session structure:
  * {
  *   id: string,
+ *   type: 'intercept',
  *   created: Date,
  *   lastActivity: Date,
- *   wrapperWs: WebSocket,
+ *   interceptorWs: WebSocket,
  *   metadata: { cwd, pid, ... },
- *   history: Array<{type, data, timestamp}>,
- *   inputDetector: InputDetector
+ *   events: Array<{type, ts, ...}>,  // Structured API events (SSE, requests, responses)
  * }
  */
 
-function createSession(wrapperWs, metadata) {
+function createInterceptSession(interceptorWs, metadata) {
   const id = crypto.randomBytes(8).toString('hex');
-
-  // Create input detector for this session
-  const inputDetector = new InputDetector(id, {
-    onWaitingDetected: (waitingInfo) => {
-      console.log(`[Session ${id}] Waiting for input:`, waitingInfo.reason);
-      // Notify subscribed mobile devices
-      notifyDevicesOfWaiting(waitingInfo);
-      // Broadcast to WebSocket viewers
-      broadcastToSession(id, {
-        type: 'waiting-for-input',
-        sessionId: id,
-        reason: waitingInfo.reason,
-        quickActions: waitingInfo.quickActions,
-        context: waitingInfo.context
-      });
-    },
-    onWaitingCleared: (info) => {
-      console.log(`[Session ${id}] Input received, waiting cleared`);
-      broadcastToSession(id, {
-        type: 'waiting-cleared',
-        sessionId: id
-      });
-    }
-  });
 
   const session = {
     id,
+    type: 'intercept',
     created: new Date(),
     lastActivity: new Date(),
-    wrapperWs,
+    interceptorWs,
     metadata: metadata || {},
-    history: [], // Keep last 10000 lines for new clients
-    maxHistory: 10000,
-    inputDetector
+    events: [],      // Structured API events (SSE, requests, responses)
+    maxEvents: 10000,
+    // Accumulated conversation state for late-joining viewers
+    conversation: [],  // Array of {role, content_blocks} representing the conversation
   };
 
   sessions.set(id, session);
-  console.log(`[Session] Created session ${id}`);
+  console.log(`[Session] Created intercept session ${id}`);
   return session;
 }
 
-function addToHistory(session, type, data) {
-  session.history.push({
-    type,
-    data,
-    timestamp: new Date()
-  });
+// Register a PID for session lookup
+function registerPid(pid, sessionId) {
+  if (pid && sessionId) {
+    pidIndex.set(Number(pid), sessionId);
+  }
+}
 
-  // Trim history
-  if (session.history.length > session.maxHistory) {
-    session.history = session.history.slice(-session.maxHistory);
+// Find an existing session by PID (fallback when session ID is unknown/expired)
+function findSessionByPid(pid) {
+  if (!pid) return null;
+  const sessionId = pidIndex.get(Number(pid));
+  if (sessionId && sessions.has(sessionId)) {
+    return sessions.get(sessionId);
+  }
+  // Clean up stale index entry
+  if (sessionId) pidIndex.delete(Number(pid));
+  return null;
+}
+
+function addToEvents(session, event) {
+  session.events.push(event);
+  if (session.events.length > session.maxEvents) {
+    session.events = session.events.slice(-session.maxEvents);
+  }
+}
+
+function handleInterceptorMessage(ws, clientId, message) {
+  const client = clients.get(clientId);
+  if (!client) return;
+
+  const session = sessions.get(client.sessionId);
+  if (!session) return;
+
+  session.lastActivity = new Date();
+
+  switch (message.type) {
+    case 'api_request':
+    case 'sse_event':
+    case 'api_response':
+    case 'api_error':
+    case 'ask-rewrite':
+    case 'ask-debug': {
+      // Store the event
+      addToEvents(session, message);
+      // Broadcast structured event to all viewers
+      broadcastToSession(session.id, message);
+      break;
+    }
+
+    case 'heartbeat': {
+      // Keepalive from interceptor - update lastActivity and track PID
+      session.lastHeartbeat = new Date();
+      if (message.pid) {
+        session.metadata.pid = message.pid;
+        registerPid(message.pid, session.id);
+      }
+      // Don't store heartbeats in events or broadcast - they're just keepalives
+      break;
+    }
+
+    case 'metadata': {
+      // Update session metadata (interceptor sends cwd, hostname, etc.)
+      session.metadata = { ...session.metadata, ...message.data };
+      if (message.data?.pid) registerPid(message.data.pid, session.id);
+      broadcastToSession(session.id, { type: 'metadata', data: session.metadata });
+      break;
+    }
+
+    case 'exit': {
+      console.log(`[Session] Intercept session ${session.id} ended (code: ${message.code}, signal: ${message.signal || 'none'})`);
+      broadcastToSession(session.id, message);
+      // Cancel any pending cleanup timer (could exist if interceptor disconnected
+      // and reconnected before sending exit)
+      if (session._cleanupTimer) {
+        clearTimeout(session._cleanupTimer);
+        session._cleanupTimer = null;
+      }
+      // Clean up PID index
+      if (session.metadata?.pid) pidIndex.delete(Number(session.metadata.pid));
+      sessions.delete(session.id);
+      break;
+    }
+
+    default:
+      console.warn(`[Interceptor] Unknown message type: ${message.type}`);
   }
 }
 
@@ -166,70 +177,28 @@ function broadcastToSession(sessionId, message) {
   }
 }
 
-function handleWrapperMessage(ws, clientId, message) {
-  const client = clients.get(clientId);
-  if (!client) return;
-
-  const session = sessions.get(client.sessionId);
-  if (!session) return;
-
-  session.lastActivity = new Date();
-
-  switch (message.type) {
-    case 'output':
-      // Claude Code output (stdout/stderr)
-      addToHistory(session, 'output', message.data);
-      broadcastToSession(session.id, message);
-      // Process through input detector for waiting state detection
-      if (session.inputDetector) {
-        session.inputDetector.processOutput(message.data);
-      }
-      break;
-
-    case 'metadata':
-      // Update session metadata
-      session.metadata = { ...session.metadata, ...message.data };
-      broadcastToSession(session.id, message);
-      break;
-
-    case 'exit':
-      // Session ended
-      console.log(`[Session] Session ${session.id} ended with code ${message.code}`);
-      broadcastToSession(session.id, message);
-      // Clean up input detector
-      if (session.inputDetector) {
-        session.inputDetector.destroy();
-      }
-      sessions.delete(session.id);
-      break;
-
-    default:
-      console.warn(`[Wrapper] Unknown message type: ${message.type}`);
-  }
-}
-
 function handleViewerMessage(ws, clientId, message) {
   const client = clients.get(clientId);
   if (!client) return;
 
   const session = sessions.get(client.sessionId);
-  if (!session || !session.wrapperWs || session.wrapperWs.readyState !== 1) {
+  if (!session) {
+    ws.send(JSON.stringify({ type: 'error', error: 'Session not available' }));
+    return;
+  }
+
+  if (!session.interceptorWs || session.interceptorWs.readyState !== 1) {
     ws.send(JSON.stringify({ type: 'error', error: 'Session not available' }));
     return;
   }
 
   switch (message.type) {
     case 'input':
-      // Forward input to the wrapper (and thus to Claude Code)
-      session.wrapperWs.send(JSON.stringify({
+      // Forward input to the interceptor for stdin injection
+      session.interceptorWs.send(JSON.stringify({
         type: 'input',
         data: message.data
       }));
-
-      // Clear waiting state since user provided input
-      if (session.inputDetector) {
-        session.inputDetector.handleInput();
-      }
 
       // Also broadcast to other viewers
       broadcastToSession(session.id, {
@@ -238,13 +207,35 @@ function handleViewerMessage(ws, clientId, message) {
       });
       break;
 
-    case 'resize':
-      // Forward terminal resize
-      session.wrapperWs.send(JSON.stringify({
-        type: 'resize',
-        cols: message.cols,
-        rows: message.rows
+    case 'raw-input':
+      // Forward raw bytes to interceptor (delivered as single buffer, no segmentation).
+      // Used for multi-byte ANSI sequences like Shift+Tab that need to arrive intact.
+      session.interceptorWs.send(JSON.stringify({
+        type: 'raw-input',
+        data: message.data
       }));
+      broadcastToSession(session.id, {
+        type: 'input-echo',
+        data: message.data
+      });
+      break;
+
+    case 'ask-answer':
+      // Forward AskUserQuestion answer to the interceptor for API-level injection
+      console.log(`[AskAnswer] Forwarding to interceptor: toolUseId=${message.toolUseId}, questions=${message.questions?.length}`);
+      session.interceptorWs.send(JSON.stringify(message));
+      break;
+
+    case 'set-mode':
+      // Forward mode change to the interceptor for API request patching
+      console.log(`[Mode] Setting mode to: ${message.mode}`);
+      session.interceptorWs.send(JSON.stringify(message));
+      break;
+
+    case 'close-session':
+      console.log(`[Session] Viewer requested close for session ${client.sessionId}`);
+      shutdownInterceptor(session);
+      reapSession(client.sessionId, 'closed by viewer');
       break;
 
     default:
@@ -255,35 +246,12 @@ function handleViewerMessage(ws, clientId, message) {
 function handleConnection(ws, req) {
   const clientId = crypto.randomBytes(8).toString('hex');
   const url = new URL(req.url, `http://${req.headers.host}`);
-  const role = url.searchParams.get('role'); // 'wrapper' or 'viewer'
+  const role = url.searchParams.get('role');
   const sessionId = url.searchParams.get('session');
 
   console.log(`[Server] New connection: ${clientId} (role: ${role}, session: ${sessionId || 'new'})`);
 
-  if (role === 'wrapper') {
-    // This is a new Claude Code session
-    // Get initial dimensions from query params if provided
-    const initialMetadata = {};
-    const cols = url.searchParams.get('cols');
-    const rows = url.searchParams.get('rows');
-    if (cols) initialMetadata.cols = parseInt(cols);
-    if (rows) initialMetadata.rows = parseInt(rows);
-
-    const session = createSession(ws, initialMetadata);
-    clients.set(clientId, {
-      ws,
-      sessionId: session.id,
-      role: 'wrapper'
-    });
-
-    // Send session ID to wrapper
-    ws.send(JSON.stringify({
-      type: 'session-created',
-      sessionId: session.id,
-      serverUrl: `ws://${HOST}:${PORT}`
-    }));
-
-  } else if (role === 'viewer') {
+  if (role === 'viewer') {
     // Client wants to view/control a session
     if (!sessionId) {
       // Send list of available sessions
@@ -319,18 +287,67 @@ function handleConnection(ws, req) {
       role: 'viewer'
     });
 
-    // Send session info and history
+    // Send session info and historical events
+    const events = session.events || [];
     ws.send(JSON.stringify({
       type: 'session-attached',
       sessionId: session.id,
+      sessionType: 'intercept',
       metadata: session.metadata,
-      history: session.history
+      events,
+    }));
+
+  } else if (role === 'interceptor') {
+    // This is an API interceptor (injected into Claude Code via --require)
+    let session;
+    const pid = url.searchParams.get('pid');
+
+    // Support reconnection with multiple fallback strategies:
+    // 1. Try matching by session ID (interceptor remembers its session)
+    // 2. Try matching by PID (same process, lost session ID after server restart)
+    // 3. Create new session as last resort
+    if (sessionId && sessions.has(sessionId)) {
+      session = sessions.get(sessionId);
+      session.interceptorWs = ws;
+      session.lastActivity = new Date();
+      // Cancel any pending cleanup timer
+      if (session._cleanupTimer) {
+        clearTimeout(session._cleanupTimer);
+        session._cleanupTimer = null;
+      }
+      console.log(`[Session] Interceptor reconnected to session ${sessionId} (by session ID)`);
+      broadcastToSession(session.id, { type: 'interceptor-reconnected' });
+    } else if (pid && (session = findSessionByPid(pid))) {
+      session.interceptorWs = ws;
+      session.lastActivity = new Date();
+      if (session._cleanupTimer) {
+        clearTimeout(session._cleanupTimer);
+        session._cleanupTimer = null;
+      }
+      console.log(`[Session] Interceptor reconnected to session ${session.id} (by PID ${pid})`);
+      broadcastToSession(session.id, { type: 'interceptor-reconnected' });
+    } else {
+      session = createInterceptSession(ws, {});
+      if (pid) registerPid(pid, session.id);
+    }
+
+    clients.set(clientId, {
+      ws,
+      sessionId: session.id,
+      role: 'interceptor'
+    });
+
+    // Send session ID back to interceptor
+    ws.send(JSON.stringify({
+      type: 'session-created',
+      sessionId: session.id,
+      serverUrl: `ws://${HOST}:${PORT}`
     }));
 
   } else {
     ws.send(JSON.stringify({
       type: 'error',
-      error: 'Invalid role. Use ?role=wrapper or ?role=viewer'
+      error: 'Invalid role. Use ?role=viewer or ?role=interceptor'
     }));
     ws.close();
     return;
@@ -342,10 +359,10 @@ function handleConnection(ws, req) {
       const message = JSON.parse(data.toString());
       const client = clients.get(clientId);
 
-      if (client.role === 'wrapper') {
-        handleWrapperMessage(ws, clientId, message);
-      } else if (client.role === 'viewer') {
+      if (client.role === 'viewer') {
         handleViewerMessage(ws, clientId, message);
+      } else if (client.role === 'interceptor') {
+        handleInterceptorMessage(ws, clientId, message);
       }
     } catch (err) {
       console.error(`[Server] Error handling message:`, err.message);
@@ -357,21 +374,38 @@ function handleConnection(ws, req) {
     console.log(`[Server] Client ${clientId} disconnected`);
     const client = clients.get(clientId);
 
-    if (client && client.role === 'wrapper') {
-      // Wrapper disconnected, remove session
+    if (client && client.role === 'interceptor') {
       const session = sessions.get(client.sessionId);
       if (session) {
-        console.log(`[Session] Wrapper disconnected for session ${session.id}`);
-        broadcastToSession(session.id, {
-          type: 'wrapper-disconnected'
-        });
-        // Keep session for a bit in case wrapper reconnects
-        setTimeout(() => {
-          if (sessions.has(client.sessionId)) {
-            console.log(`[Session] Cleaning up session ${client.sessionId}`);
-            sessions.delete(client.sessionId);
-          }
-        }, 30000); // 30 second grace period
+        // Only act on this disconnect if the closing WebSocket is still
+        // the session's current interceptor. If a reconnect happened (creating a
+        // new clientId + ws), the OLD ws will eventually fire 'close'. Without this
+        // guard, the stale close handler would reap the session even though a new
+        // interceptor is actively connected.
+        if (session.interceptorWs !== ws) {
+          console.log(`[Session] Ignoring stale interceptor disconnect for session ${session.id} (already replaced)`);
+        } else {
+          console.log(`[Session] Interceptor disconnected for session ${session.id}`);
+          broadcastToSession(session.id, {
+            type: 'wrapper-disconnected'
+          });
+          // Store timer so it can be cancelled on reconnection
+          session._cleanupTimer = setTimeout(() => {
+            if (sessions.has(client.sessionId)) {
+              // Check if PID is still alive before reaping
+              if (session.metadata?.pid && isPidAlive(session.metadata.pid)) {
+                console.log(`[Session] PID ${session.metadata.pid} still alive, extending grace for ${session.id}`);
+                session._cleanupTimer = setTimeout(() => {
+                  if (sessions.has(client.sessionId)) {
+                    reapSession(client.sessionId, 'grace period expired (extended)');
+                  }
+                }, INTERCEPT_GRACE_PERIOD);
+                return;
+              }
+              reapSession(client.sessionId, 'grace period expired');
+            }
+          }, INTERCEPT_GRACE_PERIOD);
+        }
       }
     }
 
@@ -381,6 +415,126 @@ function handleConnection(ws, req) {
   ws.on('error', (err) => {
     console.error(`[Server] WebSocket error for ${clientId}:`, err.message);
   });
+}
+
+// --- PID Liveness Check ---
+// Check if a process is still running (same-machine only)
+function isPidAlive(pid) {
+  try {
+    process.kill(Number(pid), 0); // signal 0 = check existence, don't actually signal
+    return true;
+  } catch (e) {
+    // ESRCH = no such process, EPERM = process exists but we can't signal it (still alive)
+    return e.code === 'EPERM';
+  }
+}
+
+// Tell the interceptor to exit, then close its WebSocket
+function shutdownInterceptor(session) {
+  if (session.interceptorWs && session.interceptorWs.readyState === 1) {
+    session.interceptorWs.send(JSON.stringify({ type: 'shutdown' }));
+    session.interceptorWs.close();
+  }
+}
+
+// Clean up a session and its associated state
+function reapSession(sessionId, reason) {
+  const session = sessions.get(sessionId);
+  if (!session) return;
+
+  console.log(`[Session] Reaping session ${sessionId}: ${reason}`);
+
+  // Cancel any pending cleanup timer
+  if (session._cleanupTimer) {
+    clearTimeout(session._cleanupTimer);
+    session._cleanupTimer = null;
+  }
+
+  // Clean up PID index
+  if (session.metadata?.pid) pidIndex.delete(Number(session.metadata.pid));
+
+  // Notify viewers
+  broadcastToSession(sessionId, { type: 'session-reaped', reason });
+
+  sessions.delete(sessionId);
+}
+
+// --- WebSocket Ping/Pong ---
+// Detects silently-dead connections that never fire 'close'.
+// Without this, a connection that dies mid-TCP (NAT timeout, proxy kill,
+// cable unplug) can keep the session alive forever.
+function setupPingPong(wss) {
+  // Track pong state per client
+  const pongReceived = new WeakMap();
+
+  wss.on('connection', (ws) => {
+    pongReceived.set(ws, true); // assume alive at connect
+
+    ws.on('pong', () => {
+      pongReceived.set(ws, true);
+    });
+  });
+
+  // Periodic ping sweep
+  const interval = setInterval(() => {
+    for (const ws of wss.clients) {
+      if (pongReceived.get(ws) === false) {
+        // No pong received since last ping - connection is dead
+        console.log('[Ping] Terminating dead WebSocket connection');
+        ws.terminate(); // this fires the 'close' event
+        continue;
+      }
+      pongReceived.set(ws, false);
+      try {
+        ws.ping();
+      } catch (e) {
+        // Ignore ping errors
+      }
+    }
+  }, WS_PING_INTERVAL);
+
+  // Clean up on server close
+  wss.on('close', () => clearInterval(interval));
+}
+
+// --- Stale Session Reaper ---
+// Periodically checks for zombie intercept sessions with no recent heartbeat
+// and no live WebSocket connection.
+function startSessionReaper() {
+  setInterval(() => {
+    const now = Date.now();
+
+    for (const [sessionId, session] of sessions.entries()) {
+      // Check if the interceptor WebSocket is still connected
+      const wsAlive = session.interceptorWs && session.interceptorWs.readyState === 1;
+      if (wsAlive) continue; // Connection is fine, skip
+
+      // WebSocket is not connected. Check heartbeat staleness.
+      const lastHb = session.lastHeartbeat ? session.lastHeartbeat.getTime() : 0;
+      const lastAct = session.lastActivity ? session.lastActivity.getTime() : 0;
+      const lastSeen = Math.max(lastHb, lastAct);
+      const staleDuration = now - lastSeen;
+
+      if (staleDuration < HEARTBEAT_STALE_THRESHOLD) continue; // Recently active
+
+      // Session is stale. Check if the process is still alive.
+      if (session.metadata?.pid && isPidAlive(session.metadata.pid)) {
+        // Process alive but WebSocket down. Don't reap yet - the interceptor
+        // should reconnect soon. Log it so we can debug if it doesn't.
+        if (staleDuration > INTERCEPT_GRACE_PERIOD) {
+          console.log(`[Reaper] Session ${sessionId} PID ${session.metadata.pid} alive but no WS for ${Math.round(staleDuration / 1000)}s`);
+        }
+        continue;
+      }
+
+      // Process is dead (or PID unknown) and no WebSocket. Reap it.
+      if (session._cleanupTimer) {
+        clearTimeout(session._cleanupTimer);
+        session._cleanupTimer = null;
+      }
+      reapSession(sessionId, `stale (no heartbeat for ${Math.round(staleDuration / 1000)}s, PID ${session.metadata?.pid || 'unknown'} not alive)`);
+    }
+  }, REAPER_INTERVAL);
 }
 
 // Directory browser handler
@@ -515,18 +669,16 @@ async function handleStartSession(req, res) {
         return;
       }
 
-      // Spawn wrapper.js inside a tmux session
-      // This way the session runs in tmux (can be attached to) but wrapper works normally
-      const wrapperPath = new URL('./wrapper.js', import.meta.url).pathname;
+      // Spawn Claude Code inside a tmux session with the intercept module loaded.
+      // The interceptor runs in-process via --preload (Bun) or --require (Node.js),
+      // capturing structured API events and enabling remote stdin injection.
+      const interceptPath = new URL('./intercept/intercept.cjs', import.meta.url).pathname;
 
-      // Get full paths to node and claude binaries
-      // Claude is usually in the same directory as node (when installed via npm global)
-      const nodePath = process.execPath;
-      const nodeBinDir = dirname(nodePath);
-
-      // Always use full path to claude (ignore the command parameter for now)
-      // This ensures it works with nvm and other non-standard installations
-      const claudeCmd = join(nodeBinDir, 'claude');
+      // Find the real claude binary. Strategy:
+      // 1. If the shim is installed, use it (it handles Bun/Node detection itself)
+      // 2. Otherwise find claude in PATH and inject manually
+      const shimPath = join(os.homedir(), '.claude-shim', 'bin', 'claude');
+      const useShim = existsSync(shimPath);
 
       const tmuxArgs = [
         'new-session',
@@ -540,14 +692,19 @@ async function handleStartSession(req, res) {
         tmuxArgs.push('-x', cols.toString(), '-y', rows.toString());
       }
 
-      // The command to run inside tmux: run wrapper with proper environment
-      // Use -l flag to make bash a login shell, which sources .profile/.bashrc
-      // This ensures all environment variables (HOME, USER, etc.) are set
-      // Add node bin directory to PATH so claude's shebang (#!/usr/bin/env node) works
       const wsProtocol = USE_HTTPS ? 'wss' : 'ws';
-      // Allow self-signed certificates for wss:// connections
       const tlsReject = USE_HTTPS ? 'NODE_TLS_REJECT_UNAUTHORIZED=0 ' : '';
-      const shellCommand = `export PATH="${nodeBinDir}:$PATH"; ${tlsReject}CLAUDE_CMD=${claudeCmd} CLAUDE_SEAMLESS_MODE=true CLAUDE_REMOTE_SERVER=${wsProtocol}://${HOST}:${PORT} CLAUDE_COLS=${cols || 80} CLAUDE_ROWS=${rows || 24} exec ${nodePath} ${wrapperPath}`;
+      const serverUrl = `${wsProtocol}://${HOST}:${PORT}`;
+
+      let shellCommand;
+      if (useShim) {
+        // Shim handles everything: finds real claude, detects Bun vs Node, injects interceptor
+        shellCommand = `${tlsReject}CLAUDE_INTERCEPT_SERVER=${serverUrl} exec ${shimPath}`;
+      } else {
+        // No shim — find claude and inject interceptor manually.
+        // Use both BUN_OPTIONS and NODE_OPTIONS so it works regardless of runtime.
+        shellCommand = `${tlsReject}CLAUDE_INTERCEPT_SERVER=${serverUrl} BUN_OPTIONS="--preload ${interceptPath}" NODE_OPTIONS="--require ${interceptPath}" exec claude`;
+      }
 
       tmuxArgs.push('/bin/bash', '-l', '-c', shellCommand);
 
@@ -594,7 +751,7 @@ async function handleStartSession(req, res) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         success: true,
-        sessionId: 'pending',  // Session ID will be assigned by wrapper when it connects
+        sessionId: 'pending',  // Session ID will be assigned by interceptor when it connects
         tmuxSession: tmuxSessionName,
         workingDir: resolvedPath,
         message: `Session starting in ${resolvedPath}. Attach with: tmux attach -t ${tmuxSessionName}`
@@ -636,50 +793,22 @@ if (USE_HTTPS) {
 }
 
 async function handleHttpRequest(req, res) {
-  // Handle mobile API routes first
-  if (req.url.startsWith('/api/')) {
-    const handled = await handleMobileRoute(req, res);
-    if (handled) return;
-  }
-
-  // Serve web client
-  if (req.url === '/' || req.url === '/index.html') {
+  // Serve web client — intercept (structured) viewer is the default
+  const urlPath = req.url.split('?')[0];
+  if (urlPath === '/' || urlPath === '/index.html' || urlPath === '/intercept' || urlPath === '/intercept.html') {
+    const filePath = join(__dirname, '..', 'public', 'intercept.html');
     import('fs').then(fs => {
-      import('path').then(path => {
-        import('url').then(url => {
-          const __filename = url.fileURLToPath(import.meta.url);
-          const __dirname = path.dirname(__filename);
-          const filePath = path.join(__dirname, '..', 'public', 'index.html');
-
-          fs.readFile(filePath, 'utf8', (err, data) => {
-            if (err) {
-              res.writeHead(404, { 'Content-Type': 'text/plain' });
-              res.end('Web client not found');
-            } else {
-              res.writeHead(200, { 'Content-Type': 'text/html' });
-              res.end(data);
-            }
-          });
-        });
+      fs.readFile(filePath, 'utf8', (err, data) => {
+        if (err) {
+          res.writeHead(404, { 'Content-Type': 'text/plain' });
+          res.end('Web client not found');
+        } else {
+          res.writeHead(200, { 'Content-Type': 'text/html' });
+          res.end(data);
+        }
       });
     });
-  } else if (req.url === '/pair' || req.url === '/pair.html') {
-    // Serve pairing page for mobile app setup
-    import('fs').then(fs => {
-      import('path').then(path => {
-        const filePath = path.join(__dirname, '..', 'public', 'pair.html');
-        fs.readFile(filePath, 'utf8', (err, data) => {
-          if (err) {
-            res.writeHead(404, { 'Content-Type': 'text/plain' });
-            res.end('Pairing page not found');
-          } else {
-            res.writeHead(200, { 'Content-Type': 'text/html' });
-            res.end(data);
-          }
-        });
-      });
-    });
-  } else if (req.url === '/health') {
+  } else if (urlPath === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
       status: 'ok',
@@ -689,6 +818,7 @@ async function handleHttpRequest(req, res) {
   } else if (req.url === '/sessions') {
     const sessionList = Array.from(sessions.values()).map(s => ({
       id: s.id,
+      type: s.type || 'intercept',
       created: s.created,
       lastActivity: s.lastActivity,
       metadata: s.metadata
@@ -701,6 +831,18 @@ async function handleHttpRequest(req, res) {
   } else if (req.url === '/start-session' && req.method === 'POST') {
     // Start new session endpoint
     handleStartSession(req, res);
+  } else if (req.url.startsWith('/sessions/') && req.method === 'DELETE') {
+    const sessionId = req.url.split('/')[2];
+    const session = sessions.get(sessionId);
+    if (!session) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Session not found' }));
+    } else {
+      shutdownInterceptor(session);
+      reapSession(sessionId, 'closed via API');
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true }));
+    }
   } else {
     res.writeHead(404);
     res.end('Not found');
@@ -710,6 +852,12 @@ async function handleHttpRequest(req, res) {
 // Create WebSocket server
 const wss = new WebSocketServer({ server: httpServer });
 wss.on('connection', handleConnection);
+
+// Detect silently-dead WebSocket connections via ping/pong
+setupPingPong(wss);
+
+// Periodically reap zombie sessions
+startSessionReaper();
 
 // Start server
 httpServer.listen(PORT, HOST, () => {
@@ -734,16 +882,6 @@ httpServer.listen(PORT, HOST, () => {
 // Graceful shutdown
 process.on('SIGINT', () => {
   console.log('\n[Server] Shutting down...');
-
-  // Clean up input detectors for all sessions
-  for (const session of sessions.values()) {
-    if (session.inputDetector) {
-      session.inputDetector.destroy();
-    }
-  }
-
-  // Clean up device registry (persists devices to disk)
-  deviceRegistry.destroy();
 
   // Notify all clients
   for (const [clientId, client] of clients.entries()) {

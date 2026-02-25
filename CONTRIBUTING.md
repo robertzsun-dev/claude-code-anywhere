@@ -378,7 +378,6 @@ Fixed bug
 ### Medium Priority
 
 - [ ] Session recording/playback
-- [ ] Mobile app (React Native?)
 - [ ] End-to-end encryption
 - [ ] Docker/Kubernetes deployment
 - [ ] Monitoring/metrics

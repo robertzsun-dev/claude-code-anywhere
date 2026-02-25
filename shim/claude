@@ -1,39 +1,80 @@
 #!/usr/bin/env bash
 
-# Claude Code Interceptor Shim
-# This script transparently wraps the real claude command and connects to the session server
+# Claude Code API Interceptor Shim
+#
+# This script replaces the `claude` command and injects the API interceptor
+# into Claude Code's Node.js process using NODE_OPTIONS="--require ...".
+#
+# How it works:
+#   - Intercepts API calls at the Node.js level (no PTY wrapping)
+#   - Captures structured JSON data (messages, tool calls, SSE events)
+#   - Enables remote stdin injection from the web viewer
+#   - Claude Code's local terminal works exactly as designed
+#
+# Configuration:
+#   CLAUDE_REMOTE_DIR       - Path to claude-code-anywhere project
+#   CLAUDE_REMOTE_SERVER    - Server URL (auto-detected if not set)
+#   CLAUDE_AUTO_CONNECT     - Enable/disable auto-connect (default: true)
+#   CLAUDE_INTERCEPT        - Set to "0" to disable interception
+#   CLAUDE_INTERCEPT_DEBUG  - Set to "1" for debug output
 
 # Configuration
 CLAUDE_REMOTE_DIR="${CLAUDE_REMOTE_DIR:-$HOME/claude-code-anywhere}"
-CLAUDE_ORIGINAL="${CLAUDE_ORIGINAL:-/opt/node22/bin/claude-original}"
 AUTO_CONNECT="${CLAUDE_AUTO_CONNECT:-true}"
+INTERCEPT_MODULE="${CLAUDE_REMOTE_DIR}/src/intercept/intercept.cjs"
 
-# Detect if server is running and whether it's using HTTPS
-server_running=false
-detected_protocol="ws"
-if [ "$AUTO_CONNECT" = "true" ]; then
-    # Try HTTPS first (wss://)
-    if timeout 0.5 bash -c 'curl -k -s https://localhost:8085/health > /dev/null 2>&1'; then
-        server_running=true
-        detected_protocol="wss"
-    # Fall back to HTTP (ws://)
-    elif timeout 0.5 bash -c 'curl -s http://localhost:8085/health > /dev/null 2>&1'; then
-        server_running=true
-        detected_protocol="ws"
-    fi
+# Find the original claude binary by searching PATH excluding /usr/local/bin
+find_original_claude() {
+    local new_path
+    new_path=$(echo "$PATH" | tr ':' '\n' | grep -v '^/usr/local/bin$' | tr '\n' ':' | sed 's/:$//')
+    PATH="$new_path" which claude 2>/dev/null
+}
+
+CLAUDE_ORIGINAL="${CLAUDE_ORIGINAL:-$(find_original_claude)}"
+
+if [ -z "$CLAUDE_ORIGINAL" ]; then
+    echo "Error: Original claude binary not found in PATH" >&2
+    echo "Please ensure Claude Code is installed: npm install -g @anthropic-ai/claude-code" >&2
+    exit 1
 fi
 
-# Use detected protocol or environment variable
-SERVER_URL="${CLAUDE_REMOTE_SERVER:-${detected_protocol}://localhost:8085}"
-
-# If server is running and we have node wrapper, use it
-if [ "$server_running" = "true" ] && [ -f "$CLAUDE_REMOTE_DIR/src/wrapper.js" ]; then
-    # Run through the wrapper to enable remote access
-    export CLAUDE_CMD="$CLAUDE_ORIGINAL"
-    export CLAUDE_REMOTE_SERVER="$SERVER_URL"
-    export CLAUDE_SEAMLESS_MODE="true"
-    exec node "$CLAUDE_REMOTE_DIR/src/wrapper.js" "$@"
-else
-    # Server not running or auto-connect disabled, run original claude directly
+# Quick bail: if intercept disabled, run original
+if [ "$CLAUDE_INTERCEPT" = "0" ]; then
     exec "$CLAUDE_ORIGINAL" "$@"
 fi
+
+# Quick bail: if auto-connect disabled, run original
+if [ "$AUTO_CONNECT" != "true" ]; then
+    exec "$CLAUDE_ORIGINAL" "$@"
+fi
+
+# Quick bail: if intercept module doesn't exist, run original
+if [ ! -f "$INTERCEPT_MODULE" ]; then
+    exec "$CLAUDE_ORIGINAL" "$@"
+fi
+
+# Detect if server is running and which protocol
+server_running=false
+detected_protocol="ws"
+
+# Try HTTPS first (< 0.5s timeout)
+if timeout 0.5 bash -c 'curl -k -s https://localhost:8085/health > /dev/null 2>&1'; then
+    server_running=true
+    detected_protocol="wss"
+elif timeout 0.5 bash -c 'curl -s http://localhost:8085/health > /dev/null 2>&1'; then
+    server_running=true
+    detected_protocol="ws"
+fi
+
+# If server isn't running, just run original claude
+if [ "$server_running" != "true" ]; then
+    exec "$CLAUDE_ORIGINAL" "$@"
+fi
+
+# Server is running - inject the interceptor via NODE_OPTIONS
+SERVER_URL="${CLAUDE_REMOTE_SERVER:-${detected_protocol}://localhost:8085}"
+
+export CLAUDE_INTERCEPT_SERVER="${SERVER_URL}"
+export NODE_OPTIONS="--require ${INTERCEPT_MODULE}${NODE_OPTIONS:+ $NODE_OPTIONS}"
+
+exec "$CLAUDE_ORIGINAL" "$@"

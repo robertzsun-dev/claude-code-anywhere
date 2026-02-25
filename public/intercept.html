@@ -1,0 +1,2442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Claude Code - Structured Viewer</title>
+  <style>
+    :root {
+      --bg: #1a1a2e;
+      --bg-secondary: #16213e;
+      --bg-tertiary: #0f3460;
+      --text: #e0e0e0;
+      --text-muted: #888;
+      --accent: #e94560;
+      --accent-blue: #4a9eff;
+      --accent-green: #4caf50;
+      --accent-orange: #ff9800;
+      --accent-purple: #bb86fc;
+      --border: #2a2a4a;
+      --code-bg: #0d1117;
+      --user-bg: #1a3a5c;
+      --assistant-bg: #1e1e3a;
+      --tool-bg: #1a2e1a;
+      --error-bg: #3a1a1a;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* --- Header --- */
+    .header {
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-shrink: 0;
+    }
+
+    .header h1 {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--accent);
+    }
+
+    .header .status {
+      font-size: 12px;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #666;
+    }
+    .status-dot.connected { background: var(--accent-green); }
+    .status-dot.disconnected { background: var(--accent); }
+
+    /* --- Layout --- */
+    .layout {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* --- Sidebar --- */
+    .sidebar {
+      width: 260px;
+      background: var(--bg-secondary);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+    }
+
+    .sidebar h2 {
+      padding: 12px 16px;
+      font-size: 13px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .session-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+    }
+
+    .session-item {
+      padding: 10px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      margin-bottom: 4px;
+      transition: background 0.2s;
+    }
+    .session-item:hover { background: var(--bg-tertiary); }
+    .session-item.active { background: var(--bg-tertiary); border-left: 3px solid var(--accent-blue); }
+
+    .session-item .session-id {
+      font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+      font-size: 12px;
+      color: var(--accent-blue);
+    }
+
+    .session-item .session-type {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 3px;
+      margin-left: 6px;
+      text-transform: uppercase;
+      font-weight: 600;
+    }
+    .session-type.pty { background: #2d4a2d; color: var(--accent-green); }
+    .session-type.intercept { background: #2d2d4a; color: var(--accent-purple); }
+
+    .session-item .session-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .session-close {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 14px;
+      cursor: pointer;
+      padding: 2px 6px;
+      border-radius: 4px;
+      line-height: 1;
+      opacity: 0;
+      transition: opacity 0.15s, color 0.15s;
+    }
+    .session-item:hover .session-close { opacity: 1; }
+    .session-close:hover { color: var(--accent); background: rgba(233, 69, 96, 0.15); }
+
+    .session-item .session-meta {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    /* --- Main content --- */
+    .main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .info-bar {
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border);
+      padding: 8px 16px;
+      font-size: 12px;
+      color: var(--text-muted);
+      display: flex;
+      gap: 16px;
+      flex-shrink: 0;
+    }
+
+    .info-bar .tag {
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: var(--bg-tertiary);
+      font-family: monospace;
+    }
+
+    /* --- Conversation area --- */
+    .conversation {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+      scroll-behavior: smooth;
+    }
+
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: var(--text-muted);
+    }
+
+    .empty-state h2 { font-size: 18px; margin-bottom: 8px; }
+    .empty-state p { font-size: 14px; }
+
+    /* --- Message blocks --- */
+    .message {
+      margin-bottom: 16px;
+      max-width: 900px;
+    }
+
+    .message-header {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .message-role {
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .message-role.user { color: var(--accent-blue); }
+    .message-role.assistant { color: var(--accent-purple); }
+    .message-role.system { color: var(--accent-orange); }
+
+    .message-body {
+      padding: 12px 16px;
+      border-radius: 8px;
+      line-height: 1.6;
+      font-size: 14px;
+    }
+
+    .message.user .message-body {
+      background: var(--user-bg);
+      border-left: 3px solid var(--accent-blue);
+    }
+
+    .message.assistant .message-body {
+      background: var(--assistant-bg);
+      border-left: 3px solid var(--accent-purple);
+    }
+
+    .message.system .message-body {
+      background: var(--bg-tertiary);
+      border-left: 3px solid var(--accent-orange);
+      font-size: 12px;
+    }
+
+    /* --- Tool use blocks --- */
+    .tool-use {
+      margin: 4px 0;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .tool-use-header {
+      background: var(--bg-tertiary);
+      padding: 4px 10px;
+      font-size: 11px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+    }
+
+    .tool-use-header .tool-icon { color: var(--accent-orange); font-size: 10px; }
+    .tool-use-header .tool-name {
+      font-family: monospace;
+      font-weight: 600;
+      font-size: 11px;
+      color: var(--accent-orange);
+    }
+
+    .tool-use-header .tool-expand {
+      margin-left: auto;
+      color: var(--text-muted);
+      font-size: 10px;
+    }
+
+    .tool-use-body {
+      padding: 8px 12px;
+      background: var(--code-bg);
+      font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+      font-size: 12px;
+      white-space: pre-wrap;
+      word-break: break-all;
+      max-height: 300px;
+      overflow-y: auto;
+      color: var(--text-muted);
+      display: none;
+    }
+
+    .tool-use-body.expanded {
+      display: block;
+    }
+
+    /* --- Tool result blocks --- */
+    .tool-result {
+      margin: 2px 0;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .tool-result-header {
+      padding: 4px 10px;
+      font-size: 11px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+    }
+    .tool-result-header .tool-expand {
+      margin-left: auto;
+      color: var(--text-muted);
+      font-size: 10px;
+    }
+    .tool-result-header.success { background: var(--tool-bg); }
+    .tool-result-header.error { background: var(--error-bg); }
+
+    .tool-result-body {
+      padding: 8px 12px;
+      background: var(--code-bg);
+      font-family: monospace;
+      font-size: 12px;
+      white-space: pre-wrap;
+      word-break: break-all;
+      max-height: 300px;
+      overflow-y: auto;
+      display: none;
+    }
+
+    .tool-result-body.expanded {
+      display: block;
+    }
+
+    /* --- Streaming indicator --- */
+    .streaming-cursor {
+      display: inline-block;
+      width: 8px;
+      height: 16px;
+      background: var(--accent-purple);
+      animation: blink 1s step-end infinite;
+      vertical-align: text-bottom;
+    }
+
+    @keyframes blink {
+      50% { opacity: 0; }
+    }
+
+    /* --- Thinking blocks --- */
+    .thinking-block {
+      margin: 4px 0;
+      padding: 4px 10px;
+      background: rgba(187, 134, 252, 0.1);
+      border: 1px solid rgba(187, 134, 252, 0.2);
+      border-radius: 4px;
+      font-size: 11px;
+      color: var(--accent-purple);
+      font-style: italic;
+    }
+
+    .thinking-header {
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .thinking-header .tool-expand {
+      margin-left: auto;
+      font-size: 10px;
+      font-style: normal;
+    }
+
+    .thinking-content {
+      white-space: pre-wrap;
+      max-height: 200px;
+      overflow-y: auto;
+      display: none;
+      margin-top: 4px;
+    }
+
+    .thinking-content.expanded {
+      display: block;
+    }
+
+    .thinking-content.collapsed { display: none; }
+
+    /* --- Code blocks --- */
+    .code-block {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 8px 12px;
+      margin: 8px 0;
+      font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+      font-size: 13px;
+      overflow-x: auto;
+      white-space: pre-wrap;
+    }
+
+    /* --- Request info --- */
+    .request-info {
+      margin: 4px 0;
+      padding: 3px 10px;
+      background: var(--bg-secondary);
+      border-radius: 4px;
+      font-size: 10px;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+    }
+
+    .request-info .model-tag {
+      color: var(--accent-green);
+      font-weight: 600;
+    }
+
+    .request-info .req-details {
+      display: none;
+      margin-left: 6px;
+    }
+
+    .request-info.expanded .req-details {
+      display: inline;
+    }
+
+    .request-info .tool-expand {
+      margin-left: auto;
+      font-size: 9px;
+    }
+
+    /* --- Stats bar --- */
+    .stats-bar {
+      background: var(--bg-secondary);
+      border-top: 1px solid var(--border);
+      padding: 6px 16px;
+      font-size: 11px;
+      color: var(--text-muted);
+      display: flex;
+      gap: 16px;
+      flex-shrink: 0;
+    }
+
+    /* --- Context bar --- */
+    .context-bar {
+      background: var(--bg-secondary);
+      border-top: 1px solid var(--border);
+      padding: 4px 16px;
+      font-size: 11px;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+
+    .context-meter {
+      flex: 1;
+      height: 6px;
+      background: var(--bg-tertiary);
+      border-radius: 3px;
+      overflow: hidden;
+      max-width: 200px;
+    }
+
+    .context-meter-fill {
+      height: 100%;
+      border-radius: 3px;
+      transition: width 0.3s, background 0.3s;
+      background: var(--accent-blue);
+    }
+
+    .context-meter-fill.warn { background: var(--accent-orange); }
+    .context-meter-fill.critical { background: var(--accent); }
+
+    /* --- Input bar --- */
+    .input-bar {
+      background: var(--bg-secondary);
+      border-top: 1px solid var(--border);
+      padding: 8px 16px;
+      display: flex;
+      gap: 8px;
+      align-items: flex-end;
+      flex-shrink: 0;
+    }
+
+    .input-wrapper {
+      flex: 1;
+      position: relative;
+      min-width: 0;
+    }
+
+    .input-wrapper textarea {
+      width: 100%;
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 7px 12px;
+      color: var(--text);
+      font-size: 14px;
+      font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+      outline: none;
+      resize: none;
+      overflow-y: hidden;
+      line-height: 1.4;
+      min-height: 34px;
+      max-height: 150px;
+    }
+    .input-wrapper textarea:focus { border-color: var(--accent-blue); }
+    .input-wrapper textarea:disabled { opacity: 0.5; }
+
+    .suggestion-overlay {
+      position: absolute;
+      left: 13px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 14px;
+      font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+      color: #555;
+      pointer-events: none;
+      white-space: nowrap;
+      overflow: hidden;
+      max-width: calc(100% - 26px);
+      display: none;
+    }
+
+    .suggestion-hint {
+      font-size: 11px;
+      color: #444;
+      margin-left: 4px;
+    }
+
+    /* --- Interactive options (AskUserQuestion) --- */
+    .ask-question { margin: 8px 0; }
+
+    .ask-question-text {
+      font-size: 13px;
+      color: var(--text);
+      margin-bottom: 8px;
+      font-weight: 500;
+    }
+
+    .ask-options {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .ask-option {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      cursor: pointer;
+      text-align: left;
+      color: var(--text);
+      font-size: 13px;
+      font-family: inherit;
+      transition: border-color 0.15s, background 0.15s;
+    }
+
+    .ask-option:hover:not(:disabled):not(.selected) {
+      border-color: var(--accent-blue);
+      background: rgba(74, 158, 255, 0.08);
+    }
+
+    .ask-option-num {
+      font-weight: 700;
+      color: var(--accent-blue);
+      min-width: 20px;
+      text-align: center;
+      flex-shrink: 0;
+    }
+
+    .ask-option-label { font-weight: 500; }
+
+    .ask-option-desc {
+      color: var(--text-muted);
+      font-size: 12px;
+      margin-left: auto;
+      flex-shrink: 0;
+    }
+
+    .ask-option.selected {
+      border-color: var(--accent-blue) !important;
+      background: rgba(74, 158, 255, 0.25) !important;
+      opacity: 1 !important;
+      box-shadow: 0 0 0 1px var(--accent-blue);
+    }
+    .ask-option.selected .ask-option-num::before {
+      content: '\2713 ';
+    }
+    .ask-option.dimmed {
+      opacity: 0.45;
+      pointer-events: none;
+    }
+
+    .ask-option-other {
+      border-style: dashed;
+      color: var(--text-muted);
+    }
+    .ask-option-other:hover { color: var(--text); }
+
+    .ask-question-header {
+      font-size: 11px;
+      color: var(--accent-blue);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+    }
+
+    .ask-multiselect-hint {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-weight: normal;
+    }
+
+    .ask-submit {
+      margin-top: 8px;
+      padding: 8px 20px;
+      background: var(--accent-blue);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .ask-submit:hover { opacity: 0.9; }
+    .ask-submit:disabled { opacity: 0.4; cursor: default; }
+
+    .input-bar .send-btn {
+      background: var(--accent-blue);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 0 16px;
+      height: 34px;
+      font-size: 13px;
+      cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .input-bar .send-btn:hover { opacity: 0.9; }
+    .input-bar .send-btn:disabled { opacity: 0.4; cursor: default; }
+
+    .quick-actions {
+      display: flex;
+      gap: 4px;
+      flex-shrink: 0;
+      align-items: center;
+    }
+
+    .qa-btn {
+      padding: 0 12px;
+      height: 30px;
+      border-radius: 5px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      border: 1px solid;
+      font-family: inherit;
+      transition: opacity 0.15s;
+    }
+    .qa-btn:hover:not(:disabled) { opacity: 0.8; }
+    .qa-btn:disabled { opacity: 0.3; cursor: default; }
+
+    .qa-accept { background: rgba(76, 175, 80, 0.15); border-color: var(--accent-green); color: var(--accent-green); }
+    .qa-reject { background: rgba(233, 69, 96, 0.15); border-color: var(--accent); color: var(--accent); }
+    .qa-plan { background: rgba(187, 134, 252, 0.15); border-color: var(--accent-purple); color: var(--accent-purple); }
+    .qa-normal { background: rgba(100, 181, 246, 0.15); border-color: var(--accent-blue); color: var(--accent-blue); }
+    .qa-interrupt { background: rgba(255, 152, 0, 0.15); border-color: var(--accent-orange); color: var(--accent-orange); }
+
+    .qa-sep {
+      width: 1px;
+      height: 20px;
+      background: var(--border);
+      flex-shrink: 0;
+    }
+
+    .qa-small {
+      background: var(--bg-tertiary);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0 10px;
+      height: 30px;
+      font-size: 12px;
+      font-family: monospace;
+      cursor: pointer;
+      white-space: nowrap;
+      min-width: 28px;
+      text-align: center;
+    }
+    .qa-small:hover:not(:disabled) { background: var(--border); }
+    .qa-small:disabled { opacity: 0.3; cursor: default; }
+
+    /* --- Modal (file browser) --- */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      z-index: 1000;
+      left: 0; top: 0;
+      width: 100%; height: 100%;
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(4px);
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-overlay.show { display: flex; }
+
+    .modal-box {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      width: 90%;
+      max-width: 560px;
+      max-height: 80vh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+    }
+
+    .modal-box-header {
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .modal-box-header h3 { font-size: 15px; font-weight: 600; }
+
+    .modal-box-close {
+      background: none; border: none;
+      color: var(--text-muted); font-size: 20px;
+      cursor: pointer; padding: 0; line-height: 1;
+    }
+    .modal-box-close:hover { color: var(--text); }
+
+    .modal-box-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px 16px;
+    }
+
+    .modal-box-footer {
+      padding: 12px 20px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    .current-path-display {
+      padding: 8px 12px;
+      background: var(--code-bg);
+      border-radius: 6px;
+      margin-bottom: 10px;
+      font-size: 12px;
+      color: var(--text-muted);
+      font-family: monospace;
+      word-break: break-all;
+    }
+
+    .file-list { display: flex; flex-direction: column; gap: 2px; }
+
+    .file-item {
+      padding: 8px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      transition: background 0.15s;
+      border: 1px solid transparent;
+    }
+    .file-item:hover { background: var(--bg-tertiary); border-color: var(--border); }
+    .file-item.directory { color: var(--accent-blue); }
+    .file-item.file { color: var(--text-muted); }
+    .file-icon { font-size: 14px; width: 18px; text-align: center; }
+
+    .btn-modal {
+      padding: 7px 16px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      border: none;
+      font-family: inherit;
+    }
+    .btn-modal-primary { background: var(--accent-blue); color: #fff; }
+    .btn-modal-primary:hover { opacity: 0.9; }
+    .btn-modal-secondary { background: transparent; border: 1px solid var(--border); color: var(--text); }
+    .btn-modal-secondary:hover { background: var(--bg-tertiary); }
+
+    .new-session-btn {
+      width: calc(100% - 16px);
+      margin: 8px;
+      padding: 10px;
+      background: var(--accent-blue);
+      border: none;
+      border-radius: 6px;
+      color: #fff;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s;
+      font-family: inherit;
+    }
+    .new-session-btn:hover { opacity: 0.9; }
+
+    /* --- Scrollbar --- */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #444; }
+
+    /* --- Hamburger button (mobile only) --- */
+    .hamburger {
+      display: none;
+      background: none;
+      border: none;
+      color: var(--text);
+      font-size: 22px;
+      cursor: pointer;
+      padding: 4px 8px;
+      line-height: 1;
+      flex-shrink: 0;
+    }
+
+    /* --- Sidebar overlay backdrop (mobile only) --- */
+    .sidebar-backdrop {
+      display: none;
+      position: fixed;
+      z-index: 99;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0, 0, 0, 0.5);
+    }
+    .sidebar-backdrop.show { display: block; }
+
+    /* --- Responsive --- */
+    @media (max-width: 768px) {
+      .hamburger { display: block; }
+      .sidebar {
+        display: flex;
+        position: fixed;
+        z-index: 100;
+        top: 0; left: 0;
+        height: 100dvh;
+        width: 280px;
+        transform: translateX(-100%);
+        transition: transform 0.25s ease;
+      }
+      .sidebar.open { transform: translateX(0); }
+      .conversation { padding: 12px; }
+      .header { padding: 6px 12px; }
+      .header h1 { font-size: 14px; }
+      .info-bar { padding: 4px 12px; gap: 8px; font-size: 11px; flex-wrap: wrap; }
+      .stats-bar { padding: 3px 12px; gap: 8px; font-size: 10px; }
+      .context-bar { padding: 3px 12px; font-size: 10px; }
+      .input-bar { padding: 6px 8px; gap: 6px; flex-wrap: wrap; }
+      .input-wrapper textarea { font-size: 16px; padding: 8px 10px; min-height: 36px; }
+      .input-wrapper { order: 1; flex: 1; min-width: 0; }
+      .input-bar .send-btn { order: 1; height: 36px; padding: 0 14px; font-size: 14px; }
+      .quick-actions { order: 2; width: 100%; gap: 4px; justify-content: center; flex-wrap: wrap; }
+      .qa-btn { height: 28px; padding: 0 10px; font-size: 11px; }
+      .qa-small { height: 28px; padding: 0 8px; font-size: 11px; }
+      .qa-sep { display: none; }
+      .message-body { padding: 8px 12px; font-size: 13px; }
+      .message { margin-bottom: 10px; }
+    }
+
+    @media (max-height: 700px) {
+      .header { padding: 4px 12px; }
+      .info-bar { display: none !important; }
+      .stats-bar { display: none !important; }
+      .context-bar { padding: 2px 12px; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <button class="hamburger" id="hamburgerBtn" onclick="toggleSidebar()">&#9776;</button>
+  <h1>Claude Code - Structured Viewer</h1>
+  <div class="status">
+    <div class="status-dot" id="statusDot"></div>
+    <span id="statusText">Disconnected</span>
+  </div>
+</div>
+
+<div class="sidebar-backdrop" id="sidebarBackdrop" onclick="closeSidebar()"></div>
+
+<div class="layout">
+  <div class="sidebar" id="sidebar">
+    <h2>Sessions</h2>
+    <button class="new-session-btn" onclick="openFileBrowser()">+ Start New Session</button>
+    <div class="session-list" id="sessionList">
+      <div style="padding: 16px; color: var(--text-muted); font-size: 13px;">Loading sessions...</div>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="info-bar" id="infoBar" style="display: none;">
+      <span>Session: <span class="tag" id="infoSession"></span></span>
+      <span>Model: <span class="tag" id="infoModel">-</span></span>
+      <span>Events: <span id="infoEvents">0</span></span>
+      <span>Tokens: <span id="infoTokens">-</span></span>
+      <span>Context: <span id="infoContext">-</span></span>
+    </div>
+
+    <div class="conversation" id="conversation">
+      <div class="empty-state">
+        <h2>No Session Selected</h2>
+        <p>Select an intercept session from the sidebar, or launch Claude Code with the intercept shim.</p>
+        <p style="margin-top: 12px; font-size: 12px; color: var(--text-muted);">
+          Intercept sessions capture structured API data instead of terminal output.
+        </p>
+      </div>
+    </div>
+
+    <div class="stats-bar" id="statsBar" style="display: none;">
+      <span>Input tokens: <strong id="statInputTokens">0</strong></span>
+      <span>Output tokens: <strong id="statOutputTokens">0</strong></span>
+      <span>API calls: <strong id="statApiCalls">0</strong></span>
+      <span>Tool calls: <strong id="statToolCalls">0</strong></span>
+    </div>
+
+    <div class="context-bar" id="contextBar" style="display: none;">
+      <span>Context: <strong id="ctxPercent">0%</strong></span>
+      <div class="context-meter"><div class="context-meter-fill" id="ctxMeterFill" style="width: 0%"></div></div>
+      <span id="ctxTokens">0k / 200k</span>
+      <span style="margin-left: 8px;">Usable: <strong id="ctxUsable">0%</strong></span>
+    </div>
+
+    <div class="input-bar" id="inputBar" style="display: none;">
+      <div class="quick-actions">
+        <button class="qa-btn qa-accept" onclick="sendInput('y')" id="btnAccept" disabled>Accept</button>
+        <button class="qa-btn qa-reject" onclick="sendInput('n')" id="btnReject" disabled>Reject</button>
+        <span class="qa-sep"></span>
+        <button class="qa-btn qa-normal" onclick="cycleMode()" id="btnMode" disabled>Normal</button>
+        <button class="qa-btn qa-interrupt" onclick="sendInterrupt()" id="btnInterrupt" disabled>Interrupt</button>
+        <span class="qa-sep"></span>
+        <button class="qa-small" onclick="sendInput('\x1b')" id="btnEsc" disabled>Esc</button>
+      </div>
+      <div class="input-wrapper">
+        <textarea id="inputField" rows="1" placeholder="Type input for Claude Code..." disabled></textarea>
+        <span class="suggestion-overlay" id="suggestionOverlay"></span>
+      </div>
+      <button class="send-btn" id="sendBtn" onclick="sendInputFromField()" disabled>Send</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  'use strict';
+
+  // --- Sidebar toggle (mobile) ---
+  window.toggleSidebar = function() {
+    const sidebar = document.getElementById('sidebar');
+    const backdrop = document.getElementById('sidebarBackdrop');
+    sidebar.classList.toggle('open');
+    backdrop.classList.toggle('show', sidebar.classList.contains('open'));
+  };
+  window.closeSidebar = function() {
+    document.getElementById('sidebar').classList.remove('open');
+    document.getElementById('sidebarBackdrop').classList.remove('show');
+  };
+
+  // --- State ---
+  let ws = null;
+  let currentSessionId = null;
+  let sessions = [];
+  let autoScroll = true;
+  let reconnectTimer = null;
+  let reconnectDelay = 1000;
+  const RECONNECT_MAX_DELAY = 30000;
+
+  // Conversation state (accumulated from SSE events)
+  let currentModel = null;
+  let currentMessageBlocks = [];  // content blocks being built for current assistant message
+  let activeBlockIndex = -1;
+  let lastUserText = null; // Track last shown user message to deduplicate
+  let currentRequestInternal = false; // True when processing an internal API call (skip rendering)
+  let currentRequestSuggestion = false; // True when processing a suggestion API call
+  let suggestionText = ''; // Accumulated text during suggestion streaming
+  let currentSuggestion = ''; // Current autocomplete suggestion shown in input
+  let latestContextTokens = 0; // Input tokens from the most recent API call (= context usage)
+  let currentMode = 'normal'; // Detected from tools: 'normal', 'plan', or 'auto-accept'
+  let stats = {
+    inputTokens: 0,
+    outputTokens: 0,
+    apiCalls: 0,
+    toolCalls: 0,
+    events: 0,
+  };
+
+  // DOM refs
+  const statusDot = document.getElementById('statusDot');
+  const statusText = document.getElementById('statusText');
+  const sessionListEl = document.getElementById('sessionList');
+  const conversationEl = document.getElementById('conversation');
+  const infoBar = document.getElementById('infoBar');
+  const infoSession = document.getElementById('infoSession');
+  const infoModel = document.getElementById('infoModel');
+  const infoEvents = document.getElementById('infoEvents');
+  const infoTokens = document.getElementById('infoTokens');
+  const statsBar = document.getElementById('statsBar');
+
+  // --- Server Connection ---
+  function getServerBase() {
+    return window.location.origin;
+  }
+
+  function getWsUrl() {
+    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${proto}//${window.location.host}`;
+  }
+
+  // --- Session List ---
+  async function refreshSessions() {
+    try {
+      const resp = await fetch(`${getServerBase()}/sessions`);
+      const data = await resp.json();
+      sessions = data.sessions || [];
+      renderSessionList();
+    } catch (e) {
+      console.error('Failed to fetch sessions:', e);
+    }
+  }
+
+  function renderSessionList() {
+    if (sessions.length === 0) {
+      sessionListEl.innerHTML = '<div style="padding: 16px; color: var(--text-muted); font-size: 13px;">No active sessions</div>';
+      return;
+    }
+
+    sessionListEl.innerHTML = sessions.map(s => {
+      const isActive = s.id === currentSessionId;
+      const typeClass = s.type || 'pty';
+      const age = getAge(new Date(s.created));
+      const meta = s.metadata || {};
+      const hostInfo = meta.hostname ? `${meta.user || ''}@${meta.hostname}` : '';
+
+      return `
+        <div class="session-item ${isActive ? 'active' : ''}" onclick="selectSession('${s.id}')">
+          <div class="session-row">
+            <div>
+              <span class="session-id">${s.id.slice(0, 8)}</span>
+              <span class="session-type ${typeClass}">${typeClass}</span>
+            </div>
+            <button class="session-close" onclick="event.stopPropagation(); closeSession('${s.id}')" title="Close session">&times;</button>
+          </div>
+          <div class="session-meta">${hostInfo} &middot; ${age}</div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function getAge(date) {
+    const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+    if (seconds < 60) return `${seconds}s ago`;
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+    return `${Math.floor(seconds / 3600)}h ago`;
+  }
+
+  // Expose to onclick handlers
+  window.selectSession = function(sessionId) {
+    connectToSession(sessionId);
+  };
+
+  window.closeSession = async function(sessionId) {
+    if (!confirm('Close this session?')) return;
+    try {
+      const resp = await fetch(`${getServerBase()}/sessions/${sessionId}`, { method: 'DELETE' });
+      const data = await resp.json();
+      if (data.error) {
+        alert('Error: ' + data.error);
+      }
+    } catch (e) {
+      alert('Error closing session: ' + e.message);
+    }
+    // If we just closed our active session, clear UI
+    if (sessionId === currentSessionId) {
+      cancelReconnect();
+      currentSessionId = null;
+      if (ws) { intentionalClose = true; ws.close(); ws = null; intentionalClose = false; }
+      conversationEl.innerHTML = '<div class="empty-state"><h2>Session Closed</h2><p>Select another session from the sidebar.</p></div>';
+      setStatus('disconnected', 'No session');
+      setInputEnabled(false);
+      infoBar.style.display = 'none';
+      statsBar.style.display = 'none';
+      document.getElementById('contextBar').style.display = 'none';
+      document.getElementById('inputBar').style.display = 'none';
+    }
+    refreshSessions();
+  };
+
+  // --- WebSocket Session Connection ---
+  function cancelReconnect() {
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    reconnectDelay = 1000;
+  }
+
+  function scheduleReconnect() {
+    if (reconnectTimer || !currentSessionId) return;
+    setStatus('disconnected', `Reconnecting in ${(reconnectDelay / 1000).toFixed(0)}s...`);
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      if (!currentSessionId) return;
+      reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_MAX_DELAY);
+      doConnect(currentSessionId, false);
+    }, reconnectDelay);
+  }
+
+  function connectToSession(sessionId) {
+    cancelReconnect();
+    doConnect(sessionId, true);
+    closeSidebar();
+  }
+
+  let intentionalClose = false;
+
+  function doConnect(sessionId, isNewSession) {
+    if (ws) {
+      intentionalClose = true;
+      ws.close();
+      ws = null;
+      intentionalClose = false;
+    }
+
+    currentSessionId = sessionId;
+
+    if (isNewSession) {
+      currentModel = null;
+      currentMode = 'normal';
+      currentMessageBlocks = [];
+      activeBlockIndex = -1;
+      lastUserText = null;
+      stats = { inputTokens: 0, outputTokens: 0, apiCalls: 0, toolCalls: 0, events: 0 };
+      latestContextTokens = 0;
+      conversationEl.innerHTML = '';
+    }
+
+    infoBar.style.display = 'flex';
+    statsBar.style.display = 'flex';
+    document.getElementById('contextBar').style.display = 'flex';
+    document.getElementById('inputBar').style.display = 'flex';
+    infoSession.textContent = sessionId.slice(0, 8);
+
+    setStatus('disconnected', 'Connecting...');
+
+    const url = `${getWsUrl()}/?role=viewer&session=${sessionId}`;
+    ws = new WebSocket(url);
+
+    ws.onopen = () => {
+      cancelReconnect();
+      setStatus('connected', 'Connected');
+      setInputEnabled(true);
+      if (!isNewSession) {
+        appendSystemMessage('Reconnected');
+      }
+    };
+
+    ws.onclose = () => {
+      if (intentionalClose) return;
+      setStatus('disconnected', 'Disconnected');
+      setInputEnabled(false);
+      scheduleReconnect();
+    };
+
+    ws.onerror = () => {
+      // onclose will fire after this, which triggers reconnect
+    };
+
+    ws.onmessage = (evt) => {
+      try {
+        const msg = JSON.parse(evt.data);
+        handleMessage(msg);
+      } catch (e) {
+        console.error('Message parse error:', e);
+      }
+    };
+
+    renderSessionList();
+  }
+
+  function setStatus(state, text) {
+    statusDot.className = 'status-dot ' + state;
+    statusText.textContent = text;
+  }
+
+  // --- Message Handling ---
+  function handleMessage(msg) {
+    switch (msg.type) {
+      case 'session-attached':
+        handleSessionAttached(msg);
+        break;
+      case 'api_request':
+        handleApiRequest(msg);
+        break;
+      case 'sse_event':
+        handleSSEEvent(msg);
+        break;
+      case 'api_response':
+        handleApiResponse(msg);
+        break;
+      case 'api_error':
+        handleApiError(msg);
+        break;
+      case 'ask-rewrite':
+        appendSystemMessage(`Answer injected: ${msg.answerPreview || '(unknown)'}`);
+        break;
+      case 'ask-debug':
+        // Debug trace from interceptor - log to console only (not UI)
+        console.log('[ask-debug]', msg.step, msg);
+        break;
+      case 'mode-change':
+        if (msg.mode) {
+          currentMode = msg.mode;
+          updateModeButton();
+        }
+        break;
+      case 'metadata':
+        handleMetadata(msg);
+        break;
+      case 'input-echo':
+        // Show user input and set lastUserText to prevent duplicate from api_request
+        if (msg.data) {
+          // Strip escape sequences (arrow keys, ESC, control chars) and whitespace
+          const cleanText = msg.data
+            .replace(/\x1b\[[A-Za-z0-9;]*[A-Za-z]/g, '')  // ANSI escape sequences
+            .replace(/\x1b/g, '')                           // bare ESC
+            .replace(/[\r\n]/g, '')
+            .trim();
+          if (cleanText) {
+            lastUserText = cleanText;
+            appendUserMessage(cleanText);
+          }
+        }
+        break;
+      case 'wrapper-disconnected':
+        appendSystemMessage('Session disconnected');
+        setInputEnabled(false);
+        break;
+      case 'interceptor-reconnected':
+        appendSystemMessage('Session reconnected');
+        setInputEnabled(true);
+        break;
+      case 'exit':
+        appendSystemMessage(`Session ended (code: ${msg.code || 0})`);
+        setInputEnabled(false);
+        cancelReconnect();
+        break;
+      case 'session-reaped':
+        appendSystemMessage(`Session closed${msg.reason ? ': ' + msg.reason : ''}`);
+        setInputEnabled(false);
+        cancelReconnect();
+        currentSessionId = null;
+        refreshSessions();
+        break;
+      case 'error':
+        appendSystemMessage(`Error: ${msg.error}`);
+        break;
+    }
+  }
+
+  function handleSessionAttached(msg) {
+    if (msg.metadata) handleMetadata({ data: msg.metadata });
+
+    // Replay historical events
+    if (msg.events && msg.events.length > 0) {
+      for (const event of msg.events) {
+        handleMessage(event);
+      }
+    }
+  }
+
+  function handleMetadata(msg) {
+    const meta = msg.data || {};
+    if (meta.hostname) {
+      document.title = `Claude Code - ${meta.user || ''}@${meta.hostname}`;
+    }
+  }
+
+  // Returns true if text looks like internal system content, not real user input
+  function isInternalContent(text) {
+    if (!text) return true;
+    const t = text.trim();
+    if (t.includes('<system-reminder>')) return true;
+    if (t.startsWith('<system')) return true;
+    if (t.includes('<command-name>')) return true;
+    if (t.includes('<local-command-')) return true;
+    if (t === 'foo') return true;
+    return false;
+  }
+
+  // Returns true if completed assistant text is internal metadata (not real response)
+  function isInternalAssistantResponse(text) {
+    if (!text) return true;
+    if (text === '#') return true;
+    if (text.startsWith('{') && text.includes('"isNewTopic"')) return true;
+    // Internal XML metadata responses (e.g. <is_displaying_contents>, <filepaths>)
+    if (text.startsWith('<') && /^<\w+>\s*\n/.test(text)) return true;
+    return false;
+  }
+
+  // Checks if an api_request's last_turn contains a suggestion mode prompt
+  function isSuggestionRequest(data) {
+    if (!data.last_turn) return false;
+    for (const turn of data.last_turn) {
+      if (turn.type === 'text' && turn.text && turn.text.includes('[SUGGESTION MODE:')) return true;
+      if (turn.blocks) {
+        for (const block of turn.blocks) {
+          if (block.type === 'text' && block.text && block.text.includes('[SUGGESTION MODE:')) return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  function handleApiRequest(msg) {
+    const data = msg.data || {};
+    stats.apiCalls++;
+
+    // Detect internal API calls that should not be rendered
+    const isInternalCall =
+      // Quota checks use haiku model
+      (data.model && data.model.includes('haiku')) ||
+      // MCP-only tool calls (probes, topic classification) - no built-in tools like Task/Bash
+      (data.tools && data.tools.length > 0 && data.tools.every(t => t.startsWith('mcp__')));
+
+    // Detect suggestion mode - capture response as autocomplete instead of rendering
+    const isSuggestion = !isInternalCall && isSuggestionRequest(data);
+    currentRequestSuggestion = isSuggestion;
+    if (isSuggestion) {
+      suggestionText = '';
+      currentRequestInternal = false;
+      updateStats();
+      return;
+    }
+
+    // Track whether the current request is internal so SSE/response handlers can skip
+    currentRequestInternal = isInternalCall;
+
+    if (data.model && !isInternalCall) {
+      currentModel = data.model;
+      infoModel.textContent = data.model;
+    }
+
+
+    // Show user's turn if available (deduplicate, skip internal calls)
+    // Only show text from messages that are pure user input — skip messages
+    // that contain tool_result blocks (those are tool responses, not user text)
+    if (!isInternalCall && data.last_turn && data.last_turn.length > 0) {
+      for (const turn of data.last_turn) {
+        if (turn.type === 'text' && turn.text) {
+          if (turn.text !== lastUserText && !isInternalContent(turn.text)) {
+            lastUserText = turn.text;
+            appendUserMessage(turn.text);
+          }
+        } else if (turn.blocks) {
+          const hasToolResult = turn.blocks.some(b => b.type === 'tool_result');
+          if (hasToolResult) continue;
+          // Skip entire turn if any block is system context (post-compaction context
+          // re-injection puts summary text alongside <system-reminder> blocks in one message)
+          const hasSystemContext = turn.blocks.some(b =>
+            b.type === 'text' && b.text && isInternalContent(b.text)
+          );
+          if (hasSystemContext) continue;
+          for (const block of turn.blocks) {
+            if (block.type === 'text' && block.text) {
+              if (block.text !== lastUserText && !isInternalContent(block.text)) {
+                lastUserText = block.text;
+                appendUserMessage(block.text);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Don't show request info lines for internal calls
+    if (!isInternalCall) {
+      const model = data.model || 'unknown';
+      const detailParts = [`Messages: ${data.messages_count}`];
+      if (data.tools && data.tools.length > 0) {
+        detailParts.push(`Tools: ${data.tools.join(', ')}`);
+      }
+      appendRequestInfo(model, detailParts.join(' | '));
+    }
+    updateStats();
+  }
+
+  function handleSSEEvent(msg) {
+    stats.events++;
+    infoEvents.textContent = stats.events;
+
+    // Skip rendering SSE events from internal API calls (quota checks, MCP probes)
+    if (currentRequestInternal) return;
+
+    // Capture suggestion responses as autocomplete text
+    if (currentRequestSuggestion) {
+      let sData;
+      try { sData = JSON.parse(msg.data); } catch (e) { return; }
+      if (msg.event === 'content_block_delta') {
+        const delta = sData.delta || {};
+        if (delta.type === 'text_delta' && delta.text) {
+          suggestionText += delta.text;
+        }
+      } else if (msg.event === 'message_stop') {
+        const clean = suggestionText.replace(/^\n+/, '').trim();
+        if (clean) setSuggestion(clean);
+        suggestionText = '';
+        currentRequestSuggestion = false;
+      }
+      return;
+    }
+
+    const eventType = msg.event;
+    let data;
+    try {
+      data = JSON.parse(msg.data);
+    } catch (e) {
+      return;
+    }
+
+    switch (eventType) {
+      case 'message_start':
+        handleMessageStart(data);
+        break;
+      case 'content_block_start':
+        handleContentBlockStart(data);
+        break;
+      case 'content_block_delta':
+        handleContentBlockDelta(data);
+        break;
+      case 'content_block_stop':
+        handleContentBlockStop(data);
+        break;
+      case 'message_delta':
+        handleMessageDelta(data);
+        break;
+      case 'message_stop':
+        handleMessageStop(data);
+        break;
+    }
+  }
+
+  function handleMessageStart(data) {
+    const message = data.message || {};
+    currentMessageBlocks = [];
+    activeBlockIndex = -1;
+
+    if (message.usage) {
+      stats.inputTokens += message.usage.input_tokens || 0;
+      // Track the latest input tokens for context % calculation
+      if (message.usage.input_tokens) {
+        latestContextTokens = message.usage.input_tokens
+          + (message.usage.cache_read_input_tokens || 0)
+          + (message.usage.cache_creation_input_tokens || 0);
+        updateContextDisplay();
+      }
+    }
+
+    // Create assistant message container
+    const el = createAssistantMessageEl();
+    conversationEl.appendChild(el);
+    maybeScrollToBottom();
+  }
+
+  function handleContentBlockStart(data) {
+    const index = data.index;
+    const block = data.content_block || {};
+
+    currentMessageBlocks[index] = {
+      type: block.type,
+      text: block.text || '',
+      id: block.id || null,
+      name: block.name || null,
+      input: '',
+      thinking: block.thinking || '',
+    };
+    activeBlockIndex = index;
+
+    if (block.type === 'tool_use') {
+      stats.toolCalls++;
+      appendToolUseStart(block.name, block.id);
+    } else if (block.type === 'thinking') {
+      appendThinkingStart();
+    } else if (block.type === 'text') {
+      appendTextBlockStart();
+    }
+  }
+
+  function handleContentBlockDelta(data) {
+    const index = data.index;
+    const delta = data.delta || {};
+
+    if (delta.type === 'text_delta' && delta.text) {
+      appendTextDelta(delta.text);
+      if (currentMessageBlocks[index]) {
+        currentMessageBlocks[index].text += delta.text;
+      }
+    } else if (delta.type === 'input_json_delta' && delta.partial_json) {
+      appendToolInputDelta(delta.partial_json);
+      if (currentMessageBlocks[index]) {
+        currentMessageBlocks[index].input += delta.partial_json;
+      }
+    } else if (delta.type === 'thinking_delta' && delta.thinking) {
+      appendThinkingDelta(delta.thinking);
+      if (currentMessageBlocks[index]) {
+        currentMessageBlocks[index].thinking += delta.thinking;
+      }
+    }
+  }
+
+  function handleContentBlockStop(data) {
+    removeStreamingCursor();
+
+    // If this was an AskUserQuestion tool_use, render interactive options
+    const idx = data.index;
+    const block = currentMessageBlocks[idx];
+    if (block && block.type === 'tool_use' && block.name === 'AskUserQuestion') {
+      renderAskUserQuestion(block.input, block.id);
+    }
+
+    activeBlockIndex = -1;
+  }
+
+  function handleMessageDelta(data) {
+    const delta = data.delta || {};
+    const usage = data.usage || {};
+
+    if (usage.output_tokens) {
+      stats.outputTokens += usage.output_tokens;
+    }
+
+    updateStats();
+  }
+
+  function handleMessageStop(data) {
+    removeStreamingCursor();
+
+    // Retroactively remove assistant messages that are internal metadata
+    // (e.g. "#" from initial setup, or any junk that slipped past request-level filters)
+    // But never remove messages that contain tool_use blocks (like AskUserQuestion)
+    const body = getCurrentAssistantBody();
+    if (body) {
+      const hasToolUse = body.querySelector('.tool-use') !== null;
+      if (!hasToolUse) {
+        const textSpans = body.querySelectorAll('.text-content');
+        let fullText = '';
+        for (const span of textSpans) {
+          fullText += (span.getAttribute('data-raw') || span.textContent || '');
+        }
+        if (isInternalAssistantResponse(fullText.trim())) {
+          const msgEl = body.closest('.message.assistant');
+          if (msgEl) {
+            const prev = msgEl.previousElementSibling;
+            if (prev && prev.classList.contains('request-info')) prev.remove();
+            msgEl.remove();
+          }
+        }
+      }
+    }
+
+    currentMessageBlocks = [];
+  }
+
+  function handleApiResponse(msg) {
+    const data = msg.data || {};
+
+    // Skip rendering for internal API calls (stats only)
+    if (currentRequestInternal) {
+      if (data.usage) {
+        stats.inputTokens += data.usage.input_tokens || 0;
+        stats.outputTokens += data.usage.output_tokens || 0;
+      }
+      updateStats();
+      return;
+    }
+
+    // Handle non-streaming suggestion response
+    if (currentRequestSuggestion) {
+      if (data.content) {
+        const text = data.content
+          .filter(b => b.type === 'text' && b.text)
+          .map(b => b.text)
+          .join('');
+        const clean = text.replace(/^\n+/, '').trim();
+        if (clean) setSuggestion(clean);
+      }
+      currentRequestSuggestion = false;
+      return;
+    }
+
+    // Non-streaming response - render the complete message
+    if (data.content) {
+      // Filter out internal metadata responses (e.g. topic classification)
+      const textContent = data.content
+        .filter(b => b.type === 'text' && b.text)
+        .map(b => b.text)
+        .join('');
+      if (isInternalAssistantResponse(textContent.trim())) {
+        if (data.usage) {
+          stats.inputTokens += data.usage.input_tokens || 0;
+          stats.outputTokens += data.usage.output_tokens || 0;
+        }
+        stats.apiCalls++;
+        updateStats();
+        return;
+      }
+
+      const el = createAssistantMessageEl();
+      conversationEl.appendChild(el);
+
+      for (const block of data.content) {
+        if (block.type === 'text') {
+          appendTextBlockStart();
+          appendTextDelta(block.text);
+          removeStreamingCursor();
+        } else if (block.type === 'tool_use') {
+          stats.toolCalls++;
+          appendToolUseStart(block.name, block.id);
+          appendToolInputDelta(block.input || '');
+        }
+      }
+
+      if (data.usage) {
+        stats.inputTokens += data.usage.input_tokens || 0;
+        stats.outputTokens += data.usage.output_tokens || 0;
+        if (data.usage.input_tokens) {
+          latestContextTokens = data.usage.input_tokens
+            + (data.usage.cache_read_input_tokens || 0)
+            + (data.usage.cache_creation_input_tokens || 0);
+          updateContextDisplay();
+        }
+      }
+      stats.apiCalls++;
+      updateStats();
+    }
+  }
+
+  function handleApiError(msg) {
+    // "The operation was aborted" is normal when user interrupts — not a real error
+    if (msg.error && /aborted/i.test(msg.error)) return;
+    appendSystemMessage(`API Error: ${msg.error}`);
+  }
+
+  // --- DOM Rendering ---
+  function createAssistantMessageEl() {
+    const el = document.createElement('div');
+    el.className = 'message assistant';
+    el.innerHTML = `
+      <div class="message-header">
+        <span class="message-role assistant">Assistant</span>
+        <span>${new Date().toLocaleTimeString()}</span>
+      </div>
+      <div class="message-body" id="current-assistant-body"></div>
+    `;
+    return el;
+  }
+
+  function getCurrentAssistantBody() {
+    // Find the last assistant message body
+    const bodies = conversationEl.querySelectorAll('#current-assistant-body');
+    if (bodies.length > 0) {
+      const last = bodies[bodies.length - 1];
+      return last;
+    }
+    // Create one if none exists
+    const el = createAssistantMessageEl();
+    conversationEl.appendChild(el);
+    return el.querySelector('#current-assistant-body');
+  }
+
+  function appendTextBlockStart() {
+    const body = getCurrentAssistantBody();
+    const span = document.createElement('span');
+    span.className = 'text-content';
+    body.appendChild(span);
+
+    // Add streaming cursor
+    const cursor = document.createElement('span');
+    cursor.className = 'streaming-cursor';
+    cursor.id = 'streaming-cursor';
+    body.appendChild(cursor);
+
+    maybeScrollToBottom();
+  }
+
+  function appendTextDelta(text) {
+    if (text == null) return;
+    const body = getCurrentAssistantBody();
+    const spans = body.querySelectorAll('.text-content');
+    const lastSpan = spans[spans.length - 1];
+
+    if (lastSpan) {
+      const existing = lastSpan.getAttribute('data-raw') || '';
+      let raw = existing + text;
+      // Strip leading newlines from new text blocks
+      if (!existing) raw = raw.replace(/^\n+/, '');
+      lastSpan.innerHTML = renderText(raw);
+      lastSpan.setAttribute('data-raw', raw);
+    }
+
+    maybeScrollToBottom();
+  }
+
+  function appendThinkingStart() {
+    const body = getCurrentAssistantBody();
+    const el = document.createElement('div');
+    el.className = 'thinking-block';
+    el.innerHTML = `
+      <div class="thinking-header" onclick="toggleExpand(this)">
+        Thinking...
+        <span class="tool-expand">&#9654;</span>
+      </div>
+      <div class="thinking-content"></div>
+    `;
+    body.appendChild(el);
+
+    const cursor = document.createElement('span');
+    cursor.className = 'streaming-cursor';
+    cursor.id = 'streaming-cursor';
+    body.appendChild(cursor);
+
+    maybeScrollToBottom();
+  }
+
+  function appendThinkingDelta(text) {
+    const body = getCurrentAssistantBody();
+    const thinkingEls = body.querySelectorAll('.thinking-content');
+    const last = thinkingEls[thinkingEls.length - 1];
+    if (last) {
+      last.textContent += text;
+    }
+    maybeScrollToBottom();
+  }
+
+  window.toggleExpand = function(headerEl) {
+    const body = headerEl.nextElementSibling;
+    body.classList.toggle('expanded');
+    const arrow = headerEl.querySelector('.tool-expand');
+    if (arrow) arrow.textContent = body.classList.contains('expanded') ? '\u25BC' : '\u25B6';
+  };
+
+  function appendToolUseStart(name, id) {
+    const body = getCurrentAssistantBody();
+    const el = document.createElement('div');
+    el.className = 'tool-use';
+    el.innerHTML = `
+      <div class="tool-use-header" onclick="toggleExpand(this)">
+        <span class="tool-icon">&#9881;</span>
+        <span class="tool-name">${escapeHtml(name || 'unknown')}</span>
+        <span class="tool-expand">&#9654;</span>
+      </div>
+      <div class="tool-use-body"></div>
+    `;
+    body.appendChild(el);
+
+    const cursor = document.createElement('span');
+    cursor.className = 'streaming-cursor';
+    cursor.id = 'streaming-cursor';
+    body.appendChild(cursor);
+
+    maybeScrollToBottom();
+  }
+
+  function appendToolInputDelta(text) {
+    const body = getCurrentAssistantBody();
+    const toolBodies = body.querySelectorAll('.tool-use-body');
+    const last = toolBodies[toolBodies.length - 1];
+    if (last) {
+      last.textContent += text;
+    }
+    maybeScrollToBottom();
+  }
+
+  function appendToolResult(toolUseId, content, isError) {
+    const el = document.createElement('div');
+    el.className = 'tool-result';
+    el.innerHTML = `
+      <div class="tool-result-header ${isError ? 'error' : 'success'}"
+           onclick="toggleExpand(this)">
+        <span>${isError ? '&#10060;' : '&#9989;'}</span>
+        <span>Result</span>
+        <span class="tool-expand">&#9654;</span>
+      </div>
+      <div class="tool-result-body">${escapeHtml(content || '(empty)')}</div>
+    `;
+    conversationEl.appendChild(el);
+    maybeScrollToBottom();
+  }
+
+  // --- AskUserQuestion: Interactive Options ---
+  // Supports single-question single-select (immediate click),
+  // multi-question (collect all, submit together), and
+  // multi-select (toggle options, then submit).
+  //
+  // State for multi-question/multi-select flows:
+  let askState = null; // { questions: [...], selections: [[selectedIdx, ...], ...] }
+
+  let askUid = 0;  // unique ID per AskUserQuestion render to avoid DOM collisions
+
+  function renderAskUserQuestion(inputJson, toolUseId) {
+    let parsed;
+    try { parsed = JSON.parse(inputJson); } catch (e) { return; }
+    if (!parsed.questions || !parsed.questions.length) return;
+
+    const body = getCurrentAssistantBody();
+    if (!body) return;
+
+    const toolUses = body.querySelectorAll('.tool-use');
+    const lastToolUse = toolUses[toolUses.length - 1];
+    if (!lastToolUse) return;
+
+    const toolBody = lastToolUse.querySelector('.tool-use-body');
+    if (!toolBody) return;
+
+    // Unique prefix for this AskUserQuestion instance (avoids ID collisions)
+    const uid = ++askUid;
+
+    // Determine mode: single-question single-select is the simple/common path
+    const isSingleSimple = parsed.questions.length === 1 && !parsed.questions[0].multiSelect;
+
+    // Initialize state for multi-question/multi-select
+    askState = {
+      uid,
+      toolUseId: toolUseId || null,
+      questions: parsed.questions,
+      selections: parsed.questions.map(() => []),
+    };
+
+    let html = `<div class="ask-container" data-ask-uid="${uid}">`;
+    parsed.questions.forEach((q, qIdx) => {
+      html += `<div class="ask-question" data-q="${qIdx}">`;
+      if (q.header) {
+        html += `<div class="ask-question-header">${escapeHtml(q.header)}</div>`;
+      }
+      html += `<div class="ask-question-text">${escapeHtml(q.question)}`;
+      if (q.multiSelect) html += ' <span class="ask-multiselect-hint">(select multiple)</span>';
+      html += '</div>';
+
+      if (q.options) {
+        html += '<div class="ask-options">';
+        q.options.forEach((opt, i) => {
+          const onclick = isSingleSimple
+            ? `selectOptionImmediate(this, ${i})`
+            : `toggleAskOption(${uid}, ${qIdx}, ${i})`;
+          html += `<button class="ask-option" data-uid="${uid}" data-q="${qIdx}" data-opt="${i}" onclick="${onclick}">`;
+          html += `<span class="ask-option-num">${i + 1}</span>`;
+          html += `<span class="ask-option-label">${escapeHtml(opt.label)}</span>`;
+          if (opt.description) {
+            html += `<span class="ask-option-desc">${escapeHtml(opt.description)}</span>`;
+          }
+          html += '</button>';
+        });
+        // "Other" option
+        const otherOnclick = isSingleSimple
+          ? `selectOther(${q.options.length})`
+          : `selectOther(${q.options.length})`;
+        html += `<button class="ask-option ask-option-other" onclick="${otherOnclick}">`;
+        html += '<span class="ask-option-num">&#9998;</span>';
+        html += '<span class="ask-option-label">Type custom response...</span>';
+        html += '</button>';
+        html += '</div>';
+      }
+      html += '</div>';
+    });
+
+    // Submit button for multi-question or multi-select
+    if (!isSingleSimple) {
+      html += `<button class="ask-submit" data-ask-uid="${uid}" onclick="submitAskSelections()" disabled>`;
+      html += 'Submit Selections</button>';
+    }
+    html += '</div>';
+
+    toolBody.innerHTML = html;
+    toolBody.classList.add('expanded');
+    toolBody.style.maxHeight = 'none';
+    toolBody.style.background = 'transparent';
+    toolBody.style.padding = '4px 8px';
+    // Update the expand arrow to show it's open
+    const arrow = toolBody.previousElementSibling.querySelector('.tool-expand');
+    if (arrow) arrow.textContent = '\u25BC';
+    maybeScrollToBottom();
+  }
+
+  // --- Simple mode: single-question single-select, click sends immediately ---
+  window.selectOptionImmediate = function(btnEl, optIdx) {
+    if (!ws || ws.readyState !== WebSocket.OPEN || !askState) return;
+    // Scope to THIS question's container only (avoid affecting other AskUserQuestion renders)
+    const container = btnEl.closest('.ask-container');
+    if (container) {
+      container.querySelectorAll('.ask-option').forEach(btn => btn.classList.add('dimmed'));
+    }
+    btnEl.classList.remove('dimmed');
+    btnEl.classList.add('selected');
+
+    // Send ask-answer via API-level injection (bypasses broken arrow keys in Bun)
+    const q = askState.questions[0];
+    const selectedLabel = q.options[optIdx] ? q.options[optIdx].label : `Option ${optIdx + 1}`;
+    ws.send(JSON.stringify({
+      type: 'ask-answer',
+      toolUseId: askState.toolUseId,
+      questions: [{ question: q.question, selectedLabel }],
+    }));
+    askState = null;
+  };
+
+  // --- "Other" option: prompt for custom text and send via ask-answer ---
+  window.selectOther = function(optionCount) {
+    if (!ws || ws.readyState !== WebSocket.OPEN || !askState) return;
+
+    const customText = prompt('Type your custom response:');
+    if (!customText) return; // User cancelled
+
+    // Dim all options, highlight the "Other" button
+    const container = document.querySelector(`.ask-container[data-ask-uid="${askState.uid}"]`);
+    if (container) {
+      container.querySelectorAll('.ask-option').forEach(btn => btn.classList.add('dimmed'));
+      const otherBtn = container.querySelector('.ask-option-other');
+      if (otherBtn) { otherBtn.classList.remove('dimmed'); otherBtn.classList.add('selected'); }
+    }
+
+    // Send custom text via API-level injection
+    const q = askState.questions[0];
+    ws.send(JSON.stringify({
+      type: 'ask-answer',
+      toolUseId: askState.toolUseId,
+      questions: [{ question: q.question, selectedLabel: customText }],
+    }));
+    askState = null;
+  };
+
+  // --- Multi-question / multi-select: toggle option selection ---
+  window.toggleAskOption = function(uid, qIdx, optIdx) {
+    if (!askState || askState.uid !== uid) return;
+    const q = askState.questions[qIdx];
+    const sel = askState.selections[qIdx];
+
+    if (q.multiSelect) {
+      const pos = sel.indexOf(optIdx);
+      if (pos >= 0) { sel.splice(pos, 1); } else { sel.push(optIdx); }
+    } else {
+      askState.selections[qIdx] = [optIdx];
+    }
+
+    // Update visual state — scoped to this uid + question
+    const container = document.querySelector(`.ask-container[data-ask-uid="${uid}"]`);
+    if (container && q.options) {
+      const qEl = container.querySelectorAll('.ask-question')[qIdx];
+      if (qEl) {
+        qEl.querySelectorAll('.ask-option[data-opt]').forEach(btn => {
+          const oi = parseInt(btn.dataset.opt, 10);
+          btn.classList.toggle('selected', askState.selections[qIdx].includes(oi));
+        });
+      }
+    }
+
+    updateAskSubmitButton(uid);
+  };
+
+  function updateAskSubmitButton(uid) {
+    const container = document.querySelector(`.ask-container[data-ask-uid="${uid}"]`);
+    const btn = container && container.querySelector('.ask-submit');
+    if (!btn || !askState) return;
+    const allAnswered = askState.selections.every(sel => sel.length > 0);
+    btn.disabled = !allAnswered;
+  }
+
+  // --- Submit all selections for multi-question / multi-select ---
+  // Sends all answers via API-level injection (bypasses broken arrow keys in Bun).
+  window.submitAskSelections = function() {
+    if (!ws || ws.readyState !== WebSocket.OPEN || !askState) return;
+
+    // Build the questions+answers array for the ask-answer message
+    const answers = askState.questions.map((q, qIdx) => {
+      const selected = askState.selections[qIdx];
+      let selectedLabel;
+      if (q.multiSelect) {
+        selectedLabel = selected.map(i => q.options[i] ? q.options[i].label : `Option ${i + 1}`).join(', ');
+      } else {
+        const idx = selected[0] || 0;
+        selectedLabel = q.options[idx] ? q.options[idx].label : `Option ${idx + 1}`;
+      }
+      return { question: q.question, selectedLabel };
+    });
+
+    const hasMultiSelect = askState.questions.some(q => q.multiSelect);
+    ws.send(JSON.stringify({
+      type: 'ask-answer',
+      toolUseId: askState.toolUseId,
+      questions: answers,
+      hasMultiSelect,
+    }));
+
+    // Disable submit button but keep selections highlighted for user reference
+    const uid = askState.uid;
+    const container = document.querySelector(`.ask-container[data-ask-uid="${uid}"]`);
+    const btn = container && container.querySelector('.ask-submit');
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Submitted';
+    }
+    askState = null;
+  };
+
+  function appendUserMessage(text) {
+    const el = document.createElement('div');
+    el.className = 'message user';
+    el.innerHTML = `
+      <div class="message-header">
+        <span class="message-role user">User</span>
+        <span>${new Date().toLocaleTimeString()}</span>
+      </div>
+      <div class="message-body">${renderText(text)}</div>
+    `;
+    conversationEl.appendChild(el);
+    maybeScrollToBottom();
+  }
+
+  function appendSystemMessage(text) {
+    const el = document.createElement('div');
+    el.className = 'message system';
+    el.innerHTML = `
+      <div class="message-header">
+        <span class="message-role system">System</span>
+      </div>
+      <div class="message-body">${escapeHtml(text)}</div>
+    `;
+    conversationEl.appendChild(el);
+    maybeScrollToBottom();
+  }
+
+  function appendRequestInfo(model, details) {
+    const el = document.createElement('div');
+    el.className = 'request-info';
+    el.onclick = function() { this.classList.toggle('expanded'); };
+    el.innerHTML = `<span class="model-tag">${escapeHtml(model)}</span>`
+      + `<span class="req-details">${escapeHtml(details)}</span>`
+      + `<span class="tool-expand">&#9654;</span>`;
+    conversationEl.appendChild(el);
+    maybeScrollToBottom();
+  }
+
+  function removeStreamingCursor() {
+    const cursors = document.querySelectorAll('#streaming-cursor');
+    cursors.forEach(c => c.remove());
+  }
+
+  // --- Text Rendering ---
+  function renderText(text) {
+    if (!text) return '';
+
+    let html = escapeHtml(text);
+
+    // Code blocks (```...```)
+    html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
+      return `<div class="code-block">${code}</div>`;
+    });
+
+    // Inline code (`...`)
+    html = html.replace(/`([^`]+)`/g, '<code style="background: var(--code-bg); padding: 1px 4px; border-radius: 3px;">$1</code>');
+
+    // Bold (**...**)
+    html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+
+    // Italic (*...*)
+    html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+
+    // Newlines
+    html = html.replace(/\n/g, '<br>');
+
+    return html;
+  }
+
+  function escapeHtml(str) {
+    if (!str) return '';
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  // --- Stats ---
+  function updateStats() {
+    document.getElementById('statInputTokens').textContent = stats.inputTokens.toLocaleString();
+    document.getElementById('statOutputTokens').textContent = stats.outputTokens.toLocaleString();
+    document.getElementById('statApiCalls').textContent = stats.apiCalls;
+    document.getElementById('statToolCalls').textContent = stats.toolCalls;
+    infoTokens.textContent = `${(stats.inputTokens + stats.outputTokens).toLocaleString()} tokens`;
+    infoEvents.textContent = stats.events;
+  }
+
+  // --- Context Window Display ---
+  function getMaxContext(model) {
+    // All current Claude models use 200k context
+    return 200000;
+  }
+
+  function updateContextDisplay() {
+    const maxCtx = getMaxContext(currentModel);
+    // Context %: raw input tokens / max context
+    const ctxPct = Math.min(100, (latestContextTokens / maxCtx) * 100);
+    // Usable context %: how full the usable portion is (Claude Code compresses ~80%)
+    const usableLimit = maxCtx * 0.80;
+    const usablePct = Math.min(100, (latestContextTokens / usableLimit) * 100);
+
+    // Info bar
+    const infoCtx = document.getElementById('infoContext');
+    if (infoCtx) infoCtx.textContent = `${ctxPct.toFixed(1)}%`;
+
+    // Context bar meter
+    const ctxPercent = document.getElementById('ctxPercent');
+    const ctxMeterFill = document.getElementById('ctxMeterFill');
+    const ctxTokens = document.getElementById('ctxTokens');
+    const ctxUsable = document.getElementById('ctxUsable');
+
+    if (ctxPercent) ctxPercent.textContent = `${ctxPct.toFixed(1)}%`;
+    if (ctxTokens) ctxTokens.textContent = `${(latestContextTokens / 1000).toFixed(0)}k / ${(maxCtx / 1000).toFixed(0)}k`;
+    if (ctxUsable) {
+      ctxUsable.textContent = `${usablePct.toFixed(1)}%`;
+      ctxUsable.style.color = usablePct > 90 ? 'var(--accent)' : usablePct > 70 ? 'var(--accent-orange)' : '';
+    }
+    if (ctxMeterFill) {
+      ctxMeterFill.style.width = `${ctxPct}%`;
+      ctxMeterFill.className = 'context-meter-fill'
+        + (ctxPct > 70 ? ' warn' : '')
+        + (ctxPct > 90 ? ' critical' : '');
+    }
+  }
+
+  // --- Auto-scroll ---
+  let programmaticScroll = false;
+
+  function maybeScrollToBottom() {
+    if (!autoScroll) return;
+    programmaticScroll = true;
+    requestAnimationFrame(() => {
+      conversationEl.scrollTop = conversationEl.scrollHeight;
+      // Reset after a tick so the scroll event from this assignment doesn't flip autoScroll
+      requestAnimationFrame(() => { programmaticScroll = false; });
+    });
+  }
+
+  conversationEl.addEventListener('scroll', () => {
+    if (programmaticScroll) return;  // ignore scroll events from our own scrollTo
+    const threshold = 80;
+    const atBottom = conversationEl.scrollHeight - conversationEl.scrollTop - conversationEl.clientHeight < threshold;
+    autoScroll = atBottom;
+  });
+
+  // --- Input Handling ---
+  const inputBar = document.getElementById('inputBar');
+  const inputField = document.getElementById('inputField');
+  const sendBtn = document.getElementById('sendBtn');
+  const quickBtns = ['btnAccept', 'btnReject', 'btnMode', 'btnInterrupt', 'btnEsc'].map(id => document.getElementById(id));
+
+  function setInputEnabled(enabled) {
+    inputField.disabled = !enabled;
+    sendBtn.disabled = !enabled;
+    quickBtns.forEach(btn => { if (btn) btn.disabled = !enabled; });
+  }
+
+  // --- Suggestion / Autocomplete ---
+  function setSuggestion(text) {
+    currentSuggestion = text;
+    updateSuggestionDisplay();
+  }
+
+  function clearSuggestion() {
+    currentSuggestion = '';
+    updateSuggestionDisplay();
+  }
+
+  function updateSuggestionDisplay() {
+    const overlay = document.getElementById('suggestionOverlay');
+    if (!overlay) return;
+
+    if (currentSuggestion && !inputField.value) {
+      overlay.innerHTML = escapeHtml(currentSuggestion)
+        + '<span class="suggestion-hint"> Tab</span>';
+      overlay.style.display = 'block';
+      inputField.placeholder = '';
+    } else {
+      overlay.textContent = '';
+      overlay.style.display = 'none';
+      if (!inputField.value) {
+        inputField.placeholder = 'Type input for Claude Code...';
+      }
+    }
+  }
+
+  // Expose to onclick handlers on quick-action buttons
+  window.sendInput = function(data) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({ type: 'input', data: data }));
+    clearSuggestion();
+  };
+
+  window.sendInputFromField = function() {
+    const text = inputField.value;
+    if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
+    // Send text first, then Enter separately so the interceptor's injectStdin
+    // delivers the text immediately and the \r isn't lost in the 50ms delay
+    ws.send(JSON.stringify({ type: 'input', data: text }));
+    ws.send(JSON.stringify({ type: 'input', data: '\r' }));
+    inputField.value = '';
+    inputField.style.height = 'auto';
+    clearSuggestion();
+  };
+
+  // --- Mode Cycle (Shift+Tab) ---
+  // Cycles through Claude Code's input modes (normal → plan → auto-accept → ...).
+  // Mode is detected from the tools list in API requests and shown on the button.
+  const btnMode = document.getElementById('btnMode');
+
+  function updateModeButton() {
+    if (!btnMode) return;
+    const labels = { normal: 'Normal', plan: 'Plan', 'auto-accept': 'Auto' };
+    btnMode.textContent = labels[currentMode] || 'Mode';
+    // Swap style class to reflect mode
+    btnMode.classList.remove('qa-plan', 'qa-accept', 'qa-normal');
+    if (currentMode === 'plan') {
+      btnMode.classList.add('qa-plan');
+    } else if (currentMode === 'auto-accept') {
+      btnMode.classList.add('qa-accept');
+    } else {
+      btnMode.classList.add('qa-normal');
+    }
+  }
+
+  const MODE_CYCLE = ['normal', 'plan'];
+
+  window.cycleMode = function() {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    const idx = MODE_CYCLE.indexOf(currentMode);
+    currentMode = MODE_CYCLE[(idx + 1) % MODE_CYCLE.length];
+    updateModeButton();
+    ws.send(JSON.stringify({ type: 'set-mode', mode: currentMode }));
+  };
+
+  // --- Interrupt (Ctrl+C) ---
+  window.sendInterrupt = function() {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({ type: 'input', data: '\x03' }));
+  };
+
+  function autoResizeTextarea() {
+    inputField.style.height = 'auto';
+    inputField.style.height = inputField.scrollHeight + 'px';
+    // Switch to scrollable if past max-height
+    inputField.style.overflowY = inputField.scrollHeight > 150 ? 'auto' : 'hidden';
+  }
+
+  inputField.addEventListener('keydown', (e) => {
+    if (e.key === 'Tab' && currentSuggestion && !inputField.value) {
+      e.preventDefault();
+      inputField.value = currentSuggestion;
+      clearSuggestion();
+      autoResizeTextarea();
+      return;
+    }
+    // Enter sends, Shift+Enter inserts newline
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      window.sendInputFromField();
+    }
+    // Ctrl+C → send interrupt
+    if (e.key === 'c' && e.ctrlKey) {
+      e.preventDefault();
+      window.sendInterrupt();
+    }
+    // Escape → send Esc to Claude Code
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      window.sendInput('\x1b');
+    }
+  });
+
+  inputField.addEventListener('input', () => {
+    autoResizeTextarea();
+    updateSuggestionDisplay();
+  });
+
+  // --- File Browser / Start Session ---
+  let browseCurrentPath = '';
+
+  window.openFileBrowser = function() {
+    document.getElementById('fileBrowserModal').classList.add('show');
+    browseDirectory('');
+  };
+
+  window.closeFileBrowser = function() {
+    document.getElementById('fileBrowserModal').classList.remove('show');
+  };
+
+  async function browseDirectory(path) {
+    const fileList = document.getElementById('fileList');
+    const pathDisplay = document.getElementById('currentPathDisplay');
+
+    fileList.innerHTML = '<div style="padding: 12px; color: var(--text-muted);">Loading...</div>';
+
+    try {
+      const resp = await fetch(`${getServerBase()}/browse?path=${encodeURIComponent(path)}`);
+      const data = await resp.json();
+
+      if (data.error) {
+        fileList.innerHTML = `<div style="padding: 12px; color: var(--accent);">${escapeHtml(data.error)}</div>`;
+        return;
+      }
+
+      browseCurrentPath = data.currentPath;
+      pathDisplay.textContent = browseCurrentPath;
+
+      fileList.innerHTML = '';
+      for (const item of data.items) {
+        const el = document.createElement('div');
+        el.className = `file-item ${item.isDirectory ? 'directory' : 'file'}`;
+        el.innerHTML = `<span class="file-icon">${item.isDirectory ? '\uD83D\uDCC1' : '\uD83D\uDCC4'}</span><span>${escapeHtml(item.name)}</span>`;
+        if (item.isDirectory) {
+          el.onclick = () => browseDirectory(item.path);
+        }
+        fileList.appendChild(el);
+      }
+    } catch (e) {
+      fileList.innerHTML = `<div style="padding: 12px; color: var(--accent);">Error: ${escapeHtml(e.message)}</div>`;
+    }
+  }
+
+  window.selectCurrentDirectory = async function() {
+    if (!browseCurrentPath) return;
+
+    const startBtn = document.querySelector('.modal-box-footer .btn-modal-primary');
+    if (startBtn) { startBtn.disabled = true; startBtn.textContent = 'Starting...'; }
+
+    try {
+      const resp = await fetch(`${getServerBase()}/start-session`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workingDir: browseCurrentPath,
+          command: 'claude',
+          cols: 120,
+          rows: 40
+        })
+      });
+
+      const result = await resp.json();
+
+      if (result.error) {
+        alert('Error: ' + result.error);
+        return;
+      }
+
+      closeFileBrowser();
+
+      // Poll for the new session to appear
+      let pollCount = 0;
+      const pollTimer = setInterval(async () => {
+        await refreshSessions();
+        pollCount++;
+        // Auto-connect to the new session once it appears
+        const newSession = sessions.find(s => {
+          const meta = s.metadata || {};
+          return meta.cwd === browseCurrentPath &&
+                 (Date.now() - new Date(s.created).getTime()) < 30000;
+        });
+        if (newSession) {
+          clearInterval(pollTimer);
+          connectToSession(newSession.id);
+        }
+        if (pollCount >= 15) clearInterval(pollTimer);
+      }, 2000);
+
+    } catch (e) {
+      alert('Error starting session: ' + e.message);
+    } finally {
+      if (startBtn) { startBtn.disabled = false; startBtn.textContent = 'Start Session Here'; }
+    }
+  };
+
+  // --- Initialize ---
+  setStatus('disconnected', 'No session');
+  refreshSessions();
+  setInterval(refreshSessions, 10000);
+
+  // Auto-connect if ?session=<id> is in the URL
+  const urlParams = new URLSearchParams(window.location.search);
+  const autoSession = urlParams.get('session');
+  if (autoSession) {
+    // Wait briefly for session list to load, then connect
+    setTimeout(() => connectToSession(autoSession), 500);
+  }
+
+})();
+</script>
+
+<!-- File Browser Modal -->
+<div class="modal-overlay" id="fileBrowserModal">
+  <div class="modal-box">
+    <div class="modal-box-header">
+      <h3>Select Directory</h3>
+      <button class="modal-box-close" onclick="closeFileBrowser()">&times;</button>
+    </div>
+    <div class="modal-box-body">
+      <div class="current-path-display" id="currentPathDisplay"></div>
+      <div class="file-list" id="fileList"></div>
+    </div>
+    <div class="modal-box-footer">
+      <button class="btn-modal btn-modal-secondary" onclick="closeFileBrowser()">Cancel</button>
+      <button class="btn-modal btn-modal-primary" onclick="selectCurrentDirectory()">Start Session Here</button>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
