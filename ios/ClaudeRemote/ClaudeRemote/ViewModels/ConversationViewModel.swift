@@ -19,16 +19,20 @@ final class ConversationViewModel {
     var eventCount: Int = 0
     var latestContextTokens: Int = 0
     var currentModel: String = ""
+    var isWaitingForInput = false
 
     // MARK: - Private State
 
     private let webSocket = WebSocketService()
     private var currentRequestInternal = false
     private var currentRequestSuggestion = false
+    private var currentRequestSubagent = false
     private var currentMessageBlocks: [Int: BlockState] = [:]
     private var activeBlockIndex = -1
     private var lastUserText: String?
     private var isReplayingHistory = false
+    private var mainConversationDepth = 0
+    private var lastDeltaPerBlock: [Int: String] = [:]  // dedup: track last delta per block index
 
     private struct BlockState {
         var type: String // "text", "tool_use", "thinking"
@@ -60,6 +64,10 @@ final class ConversationViewModel {
     // MARK: - Input
 
     func sendInput(_ text: String) {
+        // Show message immediately in the UI
+        messages.append(.user(text: text))
+        lastUserText = text
+        isWaitingForInput = false
         webSocket.send(.input(text))
         webSocket.send(.input("\r"))
     }
@@ -153,6 +161,18 @@ final class ConversationViewModel {
     private func handleSessionAttached(_ msg: ServerMessage) {
         connectionState = .connected
 
+        // Save any locally-sent user messages not yet in server history
+        let pendingUserMessages = messages.filter { msg in
+            if case .user(let text) = msg.content {
+                return !text.isEmpty
+            }
+            return false
+        }
+        let pendingUserTexts = Set(pendingUserMessages.compactMap { msg -> String? in
+            if case .user(let text) = msg.content { return text }
+            return nil
+        })
+
         // Clear ALL state before replaying to prevent duplicates/garbling on reconnection
         messages = []
         resetStats()
@@ -170,6 +190,17 @@ final class ConversationViewModel {
                 }
             }
             isReplayingHistory = false
+
+            // Re-add any pending user messages that weren't restored from history
+            let restoredTexts = Set(messages.compactMap { msg -> String? in
+                if case .user(let text) = msg.content { return text }
+                return nil
+            })
+            for text in pendingUserTexts where !restoredTexts.contains(text) {
+                messages.append(.user(text: text))
+                lastUserText = text
+            }
+
             NSLog("[ConversationVM] Replay done: %d messages, %d calls, %d events", messages.count, apiCalls, eventCount)
         } else {
             NSLog("[ConversationVM] session-attached: events field is nil (cast failed or missing)")
@@ -195,25 +226,26 @@ final class ConversationViewModel {
             return
         }
         apiCalls += 1
+        isWaitingForInput = false
 
         let model = data["model"] as? String ?? ""
 
         let isInternal = isInternalCall(data)
         currentRequestInternal = isInternal
         currentRequestSuggestion = isSuggestionRequest(data)
+        currentRequestSubagent = isSubagentCall(data)
 
-        if !model.isEmpty && !isInternal {
+        if !model.isEmpty && !isInternal && !currentRequestSubagent {
             currentModel = model
         }
 
         if currentRequestSuggestion { return }
         if isInternal { return }
+        if currentRequestSubagent { return }
 
         if let lastTurn = data["last_turn"] as? [[String: Any]] {
             extractUserMessages(from: lastTurn)
         }
-
-        // No longer appending requestInfo messages - stats bar shows this info
     }
 
     private func isInternalCall(_ data: [String: Any]) -> Bool {
@@ -224,6 +256,27 @@ final class ConversationViewModel {
            tools.allSatisfy({ $0.hasPrefix("mcp__") }) {
             return true
         }
+        return false
+    }
+
+    /// Detect subagent API calls by message count.
+    /// Main conversation message count grows over time. Subagent calls start fresh
+    /// with very few messages while the main conversation is deep.
+    private func isSubagentCall(_ data: [String: Any]) -> Bool {
+        let msgCount = data["messages_count"] as? Int ?? 0
+
+        // Update the high-water mark for the main conversation
+        if msgCount >= mainConversationDepth {
+            mainConversationDepth = msgCount
+            return false
+        }
+
+        // If the main conversation is established (>6 messages) and this call
+        // has less than half the depth, it's a subagent
+        if mainConversationDepth > 6 && msgCount < mainConversationDepth / 2 {
+            return true
+        }
+
         return false
     }
 
@@ -258,12 +311,7 @@ final class ConversationViewModel {
                 let hasToolResult = blocks.contains { ($0["type"] as? String) == "tool_result" }
                 if hasToolResult { continue }
 
-                let hasInternalText = blocks.contains {
-                    if let t = $0["text"] as? String { return isInternalContent(t) }
-                    return false
-                }
-                if hasInternalText { continue }
-
+                // Check each block individually - don't skip the whole turn
                 for block in blocks {
                     if let text = block["text"] as? String,
                        (block["type"] as? String) == "text",
@@ -282,6 +330,7 @@ final class ConversationViewModel {
         eventCount += 1
 
         if currentRequestInternal { return }
+        if currentRequestSubagent { return }
 
         if currentRequestSuggestion {
             handleSuggestionSSE(msg)
@@ -337,6 +386,7 @@ final class ConversationViewModel {
 
     private func handleMessageStart(_ parsed: [String: Any]) {
         currentMessageBlocks = [:]
+        lastDeltaPerBlock = [:]
         activeBlockIndex = -1
 
         if let message = parsed["message"] as? [String: Any],
@@ -379,6 +429,13 @@ final class ConversationViewModel {
         switch deltaType {
         case "text_delta":
             if let text = delta["text"] as? String {
+                // Deduplicate: the Anthropic API never sends identical consecutive deltas
+                // for the same block, so if we see one it's a duplicate event from the server
+                let key = index
+                if lastDeltaPerBlock[key] == text {
+                    break // duplicate, skip
+                }
+                lastDeltaPerBlock[key] = text
                 currentMessageBlocks[index]?.text += text
             }
         case "input_json_delta":
@@ -437,7 +494,13 @@ final class ConversationViewModel {
         }
 
         currentMessageBlocks = [:]
+        lastDeltaPerBlock = [:]
         activeBlockIndex = -1
+
+        // Mark as waiting for input when main conversation finishes responding
+        if !currentRequestInternal && !currentRequestSubagent && !currentRequestSuggestion && !isReplayingHistory {
+            isWaitingForInput = true
+        }
     }
 
     // MARK: - API Response (non-streaming)
@@ -455,6 +518,7 @@ final class ConversationViewModel {
         }
 
         if currentRequestInternal { return }
+        if currentRequestSubagent { return }
         if currentRequestSuggestion {
             if let content = data["content"] as? [[String: Any]] {
                 for block in content {
@@ -577,11 +641,24 @@ final class ConversationViewModel {
 
     private func isInternalContent(_ text: String) -> Bool {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if t.isEmpty { return true }
+
+        // Messages starting with an XML tag are system/internal content
+        if t.hasPrefix("<") && t.range(of: #"^<[a-zA-Z_-]+"#, options: .regularExpression) != nil {
+            return true
+        }
+
+        // Known system prompt content (any length)
         if t.contains("<system-reminder>") { return true }
-        if t.hasPrefix("<system") { return true }
-        if t.contains("<command-name>") { return true }
-        if t.contains("<local-command-") { return true }
-        if t == "foo" { return true }
+        if t.contains("<available-deferred-tools>") { return true }
+        if t.contains("<fast_mode_info>") { return true }
+        if t.contains("<task-notification>") { return true }
+        if t.contains("You have been invoked in the following environment") { return true }
+        if t.contains("This is the git status at the start of the conversation") { return true }
+        if t.contains("Codebase and user instructions are shown below") { return true }
+        if t.contains("The following skills are available for use with the Skill tool") { return true }
+
         return false
     }
 
@@ -604,9 +681,13 @@ final class ConversationViewModel {
         currentModel = ""
         currentMode = "normal"
         suggestionText = nil
+        isWaitingForInput = false
         currentRequestInternal = false
         currentRequestSuggestion = false
+        currentRequestSubagent = false
+        mainConversationDepth = 0
         currentMessageBlocks = [:]
+        lastDeltaPerBlock = [:]
         activeBlockIndex = -1
         lastUserText = nil
     }

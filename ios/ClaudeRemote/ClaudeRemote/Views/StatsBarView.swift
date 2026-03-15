@@ -3,7 +3,10 @@ import SwiftUI
 struct StatsBarView: View {
     var viewModel: ConversationViewModel
 
-    private let maxContext = 200_000
+    private var maxContext: Int {
+        contextWindowSize(for: viewModel.currentModel)
+    }
+
     private var usableLimit: Int { Int(Double(maxContext) * 0.80) }
 
     private var contextPercent: Double {
@@ -26,11 +29,17 @@ struct StatsBarView: View {
 
                 statLabel("\(viewModel.apiCalls) calls", icon: "arrow.up.arrow.down")
                 statLabel("\(viewModel.toolCalls) tools", icon: "gearshape")
-                statLabel(tokenString, icon: "number")
+                statLabel(contextString, icon: "text.word.spacing")
 
                 Spacer()
 
                 statLabel("\(viewModel.eventCount) events", icon: "bolt")
+
+                #if os(macOS)
+                Circle()
+                    .fill(connectionColor)
+                    .frame(width: 8, height: 8)
+                #endif
             }
 
             // Context meter
@@ -57,10 +66,16 @@ struct StatsBarView: View {
         .background(.bar)
     }
 
-    private var tokenString: String {
-        let inK = viewModel.inputTokens > 1000 ? "\(viewModel.inputTokens / 1000)k" : "\(viewModel.inputTokens)"
-        let outK = viewModel.outputTokens > 1000 ? "\(viewModel.outputTokens / 1000)k" : "\(viewModel.outputTokens)"
-        return "\(inK)/\(outK)"
+    private var contextString: String {
+        let ctx = formatTokens(viewModel.latestContextTokens)
+        let limit = formatTokens(maxContext)
+        return "\(ctx)/\(limit)"
+    }
+
+    private func formatTokens(_ n: Int) -> String {
+        if n >= 1_000_000 { return "\(n / 1_000_000)M" }
+        if n >= 1_000 { return "\(n / 1_000)k" }
+        return "\(n)"
     }
 
     private func statLabel(_ text: String, icon: String) -> some View {
@@ -71,5 +86,38 @@ struct StatsBarView: View {
                 .font(.system(size: 10, design: .monospaced))
         }
         .foregroundStyle(.secondary)
+    }
+
+    #if os(macOS)
+    private var connectionColor: Color {
+        switch viewModel.connectionState {
+        case .connected: .green
+        case .connecting, .reconnecting: .orange
+        case .disconnected: .red
+        }
+    }
+    #endif
+
+    /// Map model ID to context window size in tokens
+    private func contextWindowSize(for model: String) -> Int {
+        let m = model.lowercased()
+
+        // Opus 4.6 defaults to 1M context
+        if m.contains("opus-4-6") || m.contains("opus-4.6") { return 1_000_000 }
+
+        // Explicit 1M suffix
+        if m.contains("1m") { return 1_000_000 }
+
+        // Older Opus (4, 4.5) default to 200K
+        if m.contains("opus") { return 200_000 }
+
+        // Sonnet family
+        if m.contains("sonnet") { return 200_000 }
+
+        // Haiku family
+        if m.contains("haiku") { return 200_000 }
+
+        // Default fallback
+        return 200_000
     }
 }

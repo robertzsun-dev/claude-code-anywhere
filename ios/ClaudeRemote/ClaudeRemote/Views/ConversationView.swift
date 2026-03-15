@@ -112,27 +112,17 @@ struct ConversationView: View {
         .navigationTitle(viewModel.currentSessionId.map { "Session \(String($0.prefix(8)))" } ?? "Session")
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
-        #endif
         .toolbar {
-            #if os(iOS)
             ToolbarItem(placement: .topBarTrailing) {
-                connectionIndicator
+                Image(systemName: "circle.fill")
+                    .font(.system(size: 8))
+                    .foregroundStyle(connectionColor)
             }
-            #else
-            ToolbarItem(placement: .automatic) {
-                connectionIndicator
-            }
-            #endif
         }
+        #endif
     }
 
-    private var connectionIndicator: some View {
-        Circle()
-            .fill(connectionColor)
-            .frame(width: 8, height: 8)
-            .fixedSize()
-    }
-
+    #if os(iOS)
     private var connectionColor: Color {
         switch viewModel.connectionState {
         case .connected: .green
@@ -140,4 +130,5 @@ struct ConversationView: View {
         case .disconnected: .red
         }
     }
+    #endif
 }

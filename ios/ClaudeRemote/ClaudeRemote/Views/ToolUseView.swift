@@ -3,26 +3,9 @@ import SwiftUI
 struct ToolUseView: View {
     let name: String
     let input: String
-    @State private var isExpanded = false
 
     var body: some View {
-        DisclosureGroup(isExpanded: $isExpanded) {
-            if !input.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    Text(formatJSON(input))
-                        .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                }
-                .padding(8)
-                #if os(iOS)
-                .background(Color(.tertiarySystemBackground))
-                #else
-                .background(Color(nsColor: .textBackgroundColor))
-                #endif
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-            }
-        } label: {
+        VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
                 Image(systemName: "gearshape")
                     .font(.caption)
@@ -32,8 +15,22 @@ struct ToolUseView: View {
                     .fontWeight(.medium)
                     .foregroundStyle(.orange)
             }
+
+            if !input.isEmpty {
+                Text(formatJSON(input))
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(8)
+                #if os(iOS)
+                .background(Color(.tertiarySystemBackground))
+                #else
+                .background(Color(nsColor: .textBackgroundColor))
+                #endif
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+            }
         }
-        .tint(.orange)
     }
 
     private func formatJSON(_ str: String) -> String {

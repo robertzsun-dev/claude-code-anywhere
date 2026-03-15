@@ -56,40 +56,44 @@ struct MessageBubbleView: View {
     // MARK: - Assistant
 
     private func assistantBubble(blocks: [ContentBlock]) -> some View {
-        let textBlocks = blocks.filter { if case .text = $0 { return true }; return false }
         let toolBlocks = blocks.compactMap { block -> (String, String, String)? in
             if case .toolUse(let name, let id, let input) = block { return (name, id, input) }
             return nil
         }
         let thinkingBlocks = blocks.compactMap { block -> String? in
-            if case .thinking(let text) = block { return text }
+            if case .thinking(let text) = block, !text.isEmpty { return text }
+            return nil
+        }
+        let textBlocks = blocks.compactMap { block -> String? in
+            if case .text(let text) = block,
+               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return text }
             return nil
         }
 
-        return VStack(alignment: .leading, spacing: 4) {
-            // Thinking (collapsible)
-            ForEach(Array(thinkingBlocks.enumerated()), id: \.offset) { _, text in
-                if !text.isEmpty {
+        return ZStack(alignment: .bottomTrailing) {
+            VStack(alignment: .leading, spacing: 4) {
+                // Thinking (collapsible)
+                ForEach(Array(thinkingBlocks.enumerated()), id: \.offset) { _, text in
                     ThinkingView(text: text)
                 }
-            }
 
-            // Tool calls bundled into a single collapsible section
-            if !toolBlocks.isEmpty {
-                ToolCallsGroupView(tools: toolBlocks)
-            }
-
-            // Text content
-            ForEach(Array(textBlocks.enumerated()), id: \.offset) { _, block in
-                if case .text(let text) = block,
-                   !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                // Text content
+                ForEach(Array(textBlocks.enumerated()), id: \.offset) { _, text in
                     MarkdownTextView(text: text)
                         .textSelection(.enabled)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(8)
+            // Extra bottom-right padding so the tool badge doesn't overlap text
+            .padding(.bottom, !toolBlocks.isEmpty ? 4 : 0)
+
+            // Tiny tool badge in bottom-right corner
+            if !toolBlocks.isEmpty {
+                ToolBadgeView(tools: toolBlocks)
+                    .padding(4)
+            }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(8)
         #if os(iOS)
         .background(Color(.secondarySystemBackground))
         #else
@@ -110,37 +114,64 @@ struct MessageBubbleView: View {
     }
 }
 
-// MARK: - Bundled Tool Calls
+// MARK: - Tool Badge (bottom-right popover)
 
-struct ToolCallsGroupView: View {
+struct ToolBadgeView: View {
     let tools: [(name: String, id: String, input: String)]
-    @State private var isExpanded = false
+    @State private var showSheet = false
 
     var body: some View {
-        DisclosureGroup(isExpanded: $isExpanded) {
-            VStack(alignment: .leading, spacing: 4) {
-                ForEach(Array(tools.enumerated()), id: \.offset) { _, tool in
-                    ToolUseView(name: tool.name, input: tool.input)
-                }
-            }
+        Button {
+            showSheet.toggle()
         } label: {
-            HStack(spacing: 4) {
+            HStack(spacing: 2) {
                 Image(systemName: "gearshape")
-                    .font(.system(size: 9))
-                Text(toolSummary)
-                    .font(.system(size: 10, design: .monospaced))
+                    .font(.system(size: 8))
+                Text("\(tools.count)")
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                Image(systemName: "arrow.up.forward.square")
+                    .font(.system(size: 8))
             }
-            .foregroundStyle(.orange)
+            .foregroundStyle(.orange.opacity(0.7))
+            .padding(.horizontal, 5)
+            .padding(.vertical, 2)
+            .background(.orange.opacity(0.1))
+            .clipShape(Capsule())
         }
-        .tint(.orange)
+        .buttonStyle(.plain)
+        .sheet(isPresented: $showSheet) {
+            ToolListSheet(tools: tools)
+        }
     }
+}
 
-    private var toolSummary: String {
-        let names = tools.map(\.name)
-        let unique = NSOrderedSet(array: names).array as! [String]
-        if unique.count <= 3 {
-            return unique.joined(separator: ", ")
+struct ToolListSheet: View {
+    let tools: [(name: String, id: String, input: String)]
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("\(tools.count) Tool Calls")
+                    .font(.headline)
+                Spacer()
+                Button("Done") { dismiss() }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.blue)
+            }
+            .padding()
+
+            Divider()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(Array(tools.enumerated()), id: \.offset) { _, tool in
+                        ToolUseView(name: tool.name, input: tool.input)
+                    }
+                }
+                .padding()
+            }
         }
-        return "\(tools.count) tools"
+        .frame(minWidth: 400, minHeight: 300, maxHeight: 600)
     }
 }

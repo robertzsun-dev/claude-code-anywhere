@@ -4,9 +4,62 @@ struct InputBarView: View {
     @Binding var inputText: String
     var viewModel: ConversationViewModel
 
+    /// Detect if the last assistant message looks like a plan
+    private var lastMessageLooksPlanLike: Bool {
+        guard let last = viewModel.messages.last else { return false }
+        if case .assistant(let blocks) = last.content {
+            let text = blocks.compactMap { block -> String? in
+                if case .text(let t) = block { return t }
+                return nil
+            }.joined()
+            let lower = text.lowercased()
+            // Heuristic: numbered steps or explicit plan language
+            if lower.contains("1.") && lower.contains("2.") { return true }
+            if lower.contains("plan") && lower.contains("step") { return true }
+            if lower.contains("here's my plan") || lower.contains("here is my plan") { return true }
+            if lower.contains("implementation plan") { return true }
+        }
+        return false
+    }
+
+    /// Show plan actions when waiting for input and response looks plan-like
+    private var showPlanActions: Bool {
+        viewModel.isWaitingForInput && lastMessageLooksPlanLike
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             Divider()
+
+            // Plan acceptance bar (when Claude presents a plan)
+            if showPlanActions {
+                HStack(spacing: 8) {
+                    Image(systemName: "doc.text")
+                        .font(.caption)
+                        .foregroundStyle(.purple)
+                    Text("Plan ready")
+                        .font(.caption)
+                        .foregroundStyle(.purple)
+                        .fontWeight(.medium)
+
+                    Spacer()
+
+                    planButton("Accept", icon: "checkmark", color: .green) {
+                        viewModel.sendInput("yes")
+                    }
+                    planButton("Edit", icon: "pencil", color: .blue) {
+                        viewModel.sendInput("edit")
+                    }
+                    planButton("Reject", icon: "xmark", color: .red) {
+                        viewModel.sendInput("no")
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(.purple.opacity(0.05))
+
+                Divider()
+            }
 
             // Quick actions
             ScrollView(.horizontal, showsIndicators: false) {
@@ -54,6 +107,26 @@ struct InputBarView: View {
             .padding(.vertical, 10)
         }
         .background(.bar)
+    }
+
+    // MARK: - Plan Button
+
+    private func planButton(_ title: String, icon: String, color: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.caption2)
+                Text(title)
+                    .font(.caption)
+                    .fontWeight(.semibold)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(color.opacity(0.15))
+            .foregroundStyle(color)
+            .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Quick Action Button
